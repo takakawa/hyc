@@ -9,10 +9,12 @@
 
 int setnonblock(int sockfd)
 {
-    if (fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFD, 0)|O_NONBLOCK) == -1) {
-		    return -1;
-	}
-	return 0; }
+    if (fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFD, 0)|O_NONBLOCK) == -1) 
+    {
+        return -1;
+    }
+    return 0;
+}
 void setaddress(const char* ip,int port,struct sockaddr_in* addr){  
     bzero(addr,sizeof(*addr));  
     addr->sin_family=AF_INET;  
@@ -25,6 +27,7 @@ static void http_read(struct ev_loop *loop, ev_io *stat, int events)
    read(stat->fd,buf,1000);
    printf("http_read:\n");
    printf(buf);
+   close(stat->fd);
 }
 
 static int new_tcp_connection(const char *ip, unsigned int port)
@@ -39,9 +42,8 @@ static int new_tcp_connection(const char *ip, unsigned int port)
 
     struct sockaddr_in addr;
     setaddress(ip, port , &addr);
-    ret = connect(fd, (struct sockaddr*)(&addr), sizeof(addr));
+     connect(fd, (struct sockaddr*)(&addr), sizeof(addr));
 
-    ERROR_ON(ret);
 
     return fd;
 }
