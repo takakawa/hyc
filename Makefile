@@ -1,2 +1,2 @@
 build:
-	gcc -o hyc main.c -lev
+	gcc -o hyc -g main.c -lev
