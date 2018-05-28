@@ -61,7 +61,48 @@ static int new_tcp_connection(const char *ip, unsigned int port)
     return fd;
 }
 
+char * build_http_request(const char* method, char *path,const char *body)
+{
+       char * buf = malloc(4096);
 
+       if (buf == NULL)
+       {
+           return NULL; 
+       }
+       
+       char *host =url_get_hostname(path);
+       strcpy(buf,method);
+       strcat(buf," ");
+       strcat(buf,path);
+       strcat(buf," HTTP/1.1\r\n");
+       strcat(buf,"User-Agent: hyc\r\n");
+       strcat(buf,"Host: ");
+       strcat(buf, host);
+       strcat(buf,"\r\n");
+       strcat(buf,"Accept: */*\r\n");
+
+       if (strcmp("GET",method) == 0)
+       {
+	    strcat(buf,"\r\n");
+       }
+       else if(strcmp("POST",method) ==0)
+       {
+	     strcat(buf,"Content-Length: ");
+	     char contentlen[10] = {0};
+	     sprintf(contentlen,"%d",strlen(body));
+	     strcat(buf,contentlen);
+
+	     strcat(buf,"\r\n\r\n");
+	     strcat(buf,body);
+       }
+       else
+       {
+	       DEBUG_PRINT("Current not supoorted method","");
+	       free(buf);
+	       return NULL;
+       }
+       return buf;
+}
   
 void http_read(struct ev_loop *loop, ev_io *stat, int events)
 {
