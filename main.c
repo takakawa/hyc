@@ -108,7 +108,7 @@ int new_tcp_connection_ev(char * ip, unsigned int port,struct ev_loop *main_loop
 int main(int argc , char ** argv)
 {
 
-
+    int i = 0;
     char * ip = NULL;
     unsigned int  port  = 0;
     unsigned int  concurrent  = 0;
@@ -148,7 +148,10 @@ int main(int argc , char ** argv)
 
     struct ev_loop *main_loop = ev_default_loop(0);
 
-    new_tcp_connection_ev(ip, port ,main_loop);
+    for(i = 0; i< concurrent; i++)
+    {
+	    new_tcp_connection_ev(ip, port ,main_loop);
+    }
 
     ev_run(main_loop, 0);
 }
