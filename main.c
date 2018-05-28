@@ -22,6 +22,7 @@ struct Host
 {
    char *ip;
    unsigned int  port;
+   unsigned int  n;
    char *path;
 };
 
@@ -53,16 +54,19 @@ static int new_tcp_connection(const char *ip, unsigned int port)
     setnonblock(fd);
     setaddress(ip, port , &addr);
     ret = connect(fd, (struct sockaddr*)(&addr), sizeof(addr));
+/*    
     if(ret < 0)
     {
        DEBUG_PRINT("Connect Error:%d\n",ret); 
        return -2;
     }
+    
+    */
 
     return fd;
 }
 
-char * build_http_request(const char* method, char *path,const char *body)
+char * build_http_request(const char* method, char *url,const char *body)
 {
        char * buf = malloc(4096);
 
@@ -70,17 +74,27 @@ char * build_http_request(const char* method, char *path,const char *body)
        {
            return NULL; 
        }
-       
-       char *host =url_get_hostname(path);
+
+       url_data_t *parsed = url_parse(url);
+       if(parsed == NULL)
+       {
+           return NULL; 
+       }
+
+       DEBUG_PRINT("input path:%s\n",url);
+       DEBUG_PRINT("host:%s\n",parsed->host);
+       DEBUG_PRINT("path:%s\n",parsed->path);
+
        strcpy(buf,method);
        strcat(buf," ");
-       strcat(buf,path);
+       strcat(buf,parsed->path);
        strcat(buf," HTTP/1.1\r\n");
        strcat(buf,"User-Agent: hyc\r\n");
-       strcat(buf,"Host: ");
-       strcat(buf, host);
-       strcat(buf,"\r\n");
        strcat(buf,"Accept: */*\r\n");
+
+       strcat(buf,"Host: ");
+       strcat(buf, parsed->host);
+       strcat(buf,"\r\n");
 
        if (strcmp("GET",method) == 0)
        {
@@ -100,8 +114,10 @@ char * build_http_request(const char* method, char *path,const char *body)
        {
 	       DEBUG_PRINT("Current not supoorted method","");
 	       free(buf);
+	       free(parsed);
 	       return NULL;
        }
+       free(parsed);
        return buf;
 }
   
@@ -112,7 +128,6 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
    int n = read(stat->fd,buf,1000);
    if (n == 0)
    {
-	request_cnt = 0;
 	DEBUG_PRINT("remote closed client\n","") ;
 	close(stat->fd);
 	ev_io_stop(loop, stat);
@@ -121,12 +136,23 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
 	//struct Host *h = (struct Host *) stat->data;
 	DEBUG_PRINT("reconnect to  client:%s:%d\n",h.ip,h.port) ;
 	new_tcp_connection_ev(h.ip, h.port ,loop);
+	request_cnt  ++;
    }
    else
    {
-	   DEBUG_PRINT("http_read: %d\n",request_cnt);
-	   DEBUG_PRINT("recv:%s",buf);
 	   request_cnt ++; 
+
+	   if(request_cnt > h.n)
+	   {
+		close(stat->fd);
+		ev_io_stop(loop, stat);
+		free(stat);
+		DEBUG_PRINT("run %d times quit",request_cnt);
+     		return; 
+	   }
+	   DEBUG_PRINT("http_read: %d\n",request_cnt);
+	   DEBUG_PRINT("recv:%s\n",buf);
+	   DEBUG_PRINT("path:%s\n",h.path);
 	   char *req = build_http_request("GET",h.path,"");
 	   write(stat->fd,req,strlen(req));
 	   free(req);
@@ -165,17 +191,21 @@ int main(int argc , char ** argv)
 {
 
     int i = 0;
+    int n = 10000;
     unsigned int  concurrent  = 0;
     char * url = NULL;
     int c ;
 
     opterr = 0;
-    while( (c= getopt(argc, argv , "c:u:")) != -1 )
+    while( (c= getopt(argc, argv , "c:u:n:")) != -1 )
     {
    	switch(c)
 	    {
 	   	case 'c': 
 			concurrent = atoi(optarg);
+			break;
+	   	case 'n': 
+			n = atoi(optarg);
 			break;
 	   	case 'u': 
 			url = optarg;
@@ -202,10 +232,12 @@ int main(int argc , char ** argv)
     }
     DEBUG_PRINT("hostname:%s\n",parsed->host);
     DEBUG_PRINT("port:%s\n",parsed->port);
+    DEBUG_PRINT("path:%s\n",parsed->path);
 
     h.ip = parsed->host;
     h.port = atoi(parsed->port);
-    h.path = url_get_pathname(url);
+    h.path = url;
+    h.n = n;
 
     DEBUG_PRINT("%s:%d concurrent:%d\n",h.ip,h.port,concurrent);
 
