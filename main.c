@@ -22,6 +22,7 @@ struct Host
 {
    char *ip;
    unsigned int  port;
+   char *path;
 };
 
 struct Host h ;
@@ -126,8 +127,9 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
 	   DEBUG_PRINT("http_read: %d\n",request_cnt);
 	   DEBUG_PRINT("recv:%s",buf);
 	   request_cnt ++; 
-	   char *req = "GET / HTTP/1.1\r\nHost: 127.0.0.1:19890\r\n\r\n";
+	   char *req = build_http_request("GET",h.path,"");
 	   write(stat->fd,req,strlen(req));
+	   free(req);
    }
 }
 int new_tcp_connection_ev(char * ip, unsigned int port,struct ev_loop *main_loop)
@@ -154,8 +156,9 @@ int new_tcp_connection_ev(char * ip, unsigned int port,struct ev_loop *main_loop
     ev_io_start(main_loop,http_readable);
 
 
-    char *req = "GET / HTTP/1.1\r\nHost: 127.0.0.1:19890\r\n\r\n";
+    char *req = build_http_request("GET",h.path,"");
     write(fd,req,strlen(req));
+    free(req);
 }
 
 int main(int argc , char ** argv)
@@ -202,6 +205,7 @@ int main(int argc , char ** argv)
 
     h.ip = parsed->host;
     h.port = atoi(parsed->port);
+    h.path = url_get_pathname(url);
 
     DEBUG_PRINT("%s:%d concurrent:%d\n",h.ip,h.port,concurrent);
 
