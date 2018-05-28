@@ -121,28 +121,20 @@ int main(int argc , char ** argv)
 {
 
     int i = 0;
-    char * ip = NULL;
-    unsigned int  port  = 0;
     unsigned int  concurrent  = 0;
     char * url = NULL;
     int c ;
 
     opterr = 0;
-    while( (c= getopt(argc, argv , "c:h:p:u:")) != -1 )
+    while( (c= getopt(argc, argv , "c:u:")) != -1 )
     {
    	switch(c)
 	    {
 	   	case 'c': 
 			concurrent = atoi(optarg);
 			break;
-	   	case 'h': 
-			ip = optarg;
-			break;
 	   	case 'u': 
 			url = optarg;
-			break;
-	   	case 'p': 
-			port = atoi(optarg);
 			break;
 	    
 		default:
@@ -151,9 +143,8 @@ int main(int argc , char ** argv)
     
     }
 
-    DEBUG_PRINT("%s:%d concurrent:%d\n",ip,port,concurrent);
 
-    if (ip == NULL || port == 0 || concurrent == 0 || url == NULL)
+    if ( concurrent == 0 || url == NULL)
     {
        DEBUG_PRINT("args wrong","");
        exit(-1); 
@@ -168,14 +159,16 @@ int main(int argc , char ** argv)
     DEBUG_PRINT("hostname:%s\n",parsed->host);
     DEBUG_PRINT("port:%s\n",parsed->port);
 
-    h.ip = ip;
-    h.port = port;
+    h.ip = parsed->host;
+    h.port = atoi(parsed->port);
+
+    DEBUG_PRINT("%s:%d concurrent:%d\n",h.ip,h.port,concurrent);
 
     struct ev_loop *main_loop = ev_default_loop(0);
 
     for(i = 0; i< concurrent; i++)
     {
-	    new_tcp_connection_ev(ip, port ,main_loop);
+	    new_tcp_connection_ev(h.ip, h.port ,main_loop);
     }
 
     ev_run(main_loop, 0);
