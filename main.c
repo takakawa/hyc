@@ -1,14 +1,20 @@
 #include<stdio.h>
-#include<string.h>
 #include<stdlib.h>
+#include<string.h>
+#include<getopt.h>
 #include<unistd.h>
 #include<sys/socket.h>
-#include<linux/in.h>
+#include<arpa/inet.h>
+#include<netinet/in.h>
 #include<ev.h>
 #include<fcntl.h>
+#include"url.h"
 
 #define ERROR_ON(fd)  if(fd < 0) return -1;
 #define DEBUG_PRINT(format,args...)   fprintf(stdout,"[DEBUG]%s:%d->"format,__func__,__LINE__,##args)
+extern char *optarg;
+extern int optopt;
+extern int opterr;
 
 int new_tcp_connection_ev(char * ip, unsigned int port,struct ev_loop *main_loop);
 
@@ -17,16 +23,24 @@ struct Host
    char *ip;
    unsigned int  port;
 };
+
 struct Host h ;
 
 void setaddress(const char* ip,int port,struct sockaddr_in* addr)
 {  
-    bzero(addr,sizeof(*addr));  
+    memset(addr,0, sizeof(*addr));  
     addr->sin_family=AF_INET;  
     inet_pton(AF_INET,ip,&(addr->sin_addr));  
     addr->sin_port=htons(port);  
 }
-
+int setnonblock(int sockfd)
+{
+    if (fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFD, 0)|O_NONBLOCK) == -1) 
+    {
+        return -1;
+    }
+    return 0;
+}
 static int new_tcp_connection(const char *ip, unsigned int port)
 {
 
@@ -37,23 +51,21 @@ static int new_tcp_connection(const char *ip, unsigned int port)
     ERROR_ON(fd);
     setnonblock(fd);
     setaddress(ip, port , &addr);
-    connect(fd, (struct sockaddr*)(&addr), sizeof(addr));
+    ret = connect(fd, (struct sockaddr*)(&addr), sizeof(addr));
+    if(ret < 0)
+    {
+       DEBUG_PRINT("Connect Error:%d\n",ret); 
+       return -2;
+    }
 
     return fd;
 }
 
-int setnonblock(int sockfd)
-{
-    if (fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFD, 0)|O_NONBLOCK) == -1) 
-    {
-        return -1;
-    }
-    return 0;
-}
+
   
 void http_read(struct ev_loop *loop, ev_io *stat, int events)
 {
-   static request_cnt  = 0;
+   static int request_cnt  = 0;
    char buf[1000] = {'\0'};
    int n = read(stat->fd,buf,1000);
    if (n == 0)
@@ -112,10 +124,11 @@ int main(int argc , char ** argv)
     char * ip = NULL;
     unsigned int  port  = 0;
     unsigned int  concurrent  = 0;
+    char * url = NULL;
     int c ;
 
     opterr = 0;
-    while( (c= getopt(argc, argv , "c:h:p:")) != -1 )
+    while( (c= getopt(argc, argv , "c:h:p:u:")) != -1 )
     {
    	switch(c)
 	    {
@@ -124,6 +137,9 @@ int main(int argc , char ** argv)
 			break;
 	   	case 'h': 
 			ip = optarg;
+			break;
+	   	case 'u': 
+			url = optarg;
 			break;
 	   	case 'p': 
 			port = atoi(optarg);
@@ -137,11 +153,20 @@ int main(int argc , char ** argv)
 
     DEBUG_PRINT("%s:%d concurrent:%d\n",ip,port,concurrent);
 
-    if (ip == NULL || port == 0 || concurrent == 0)
+    if (ip == NULL || port == 0 || concurrent == 0 || url == NULL)
     {
        DEBUG_PRINT("args wrong","");
        exit(-1); 
     }
+
+    url_data_t *parsed = url_parse(url);
+    if (parsed == NULL)
+    {
+       DEBUG_PRINT("URL WRONG:%s\n",url); 
+       exit(-1);
+    }
+    DEBUG_PRINT("hostname:%s\n",parsed->host);
+    DEBUG_PRINT("port:%s\n",parsed->port);
 
     h.ip = ip;
     h.port = port;
@@ -154,4 +179,5 @@ int main(int argc , char ** argv)
     }
 
     ev_run(main_loop, 0);
+    url_free(parsed);
 }
