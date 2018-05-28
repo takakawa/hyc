@@ -1,11 +1,15 @@
 #include<stdio.h>
 #include<string.h>
+#include<stdlib.h>
+#include<unistd.h>
 #include<sys/socket.h>
 #include<linux/in.h>
 #include<ev.h>
 #include<fcntl.h>
 
 #define ERROR_ON(fd)  if(fd < 0) return -1;
+#define DEBUG_PRINT(format,args...)   fprintf(stdout,"[DEBUG]%s:%d->"format,__func__,__LINE__,##args)
+
 struct Host
 {
    char *ip;
@@ -50,11 +54,11 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
    int n = read(stat->fd,buf,1000);
    if (n == 0)
    {
-      printf("remote closed client\n") ;
+      DEBUG_PRINT("remote closed client\n","") ;
       close(stat->fd);
       ev_io_stop(loop, stat);
       struct Host *h = (struct Host *) stat->data;
-      printf("reconnect to  client:%s:%d\n",h->ip,h->port) ;
+      DEBUG_PRINT("reconnect to  client:%s:%d\n",h->ip,h->port) ;
       int fd = new_tcp_connection(h->ip, h->port);
 
     struct ev_io http_readable;
@@ -69,25 +73,68 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
    }
    else
    {
-	   //printf("http_read: %d\n",request_cnt);
-	   //printf(buf);
+	   //DEBUG_PRINT("http_read: %d\n",request_cnt);
+	   //DEBUG_PRINT(buf);
 	   request_cnt ++; 
 	   char *req = "GET / HTTP/1.1\r\nHost: 127.0.0.1:19890\r\n\r\n";
 	   write(stat->fd,req,strlen(req));
    }
 }
-
-
-int main(int argc , char ** argv)
+int new_tcp_connection_ev(char * ip, unsigned int port,struct ev_loop *main_loop)
 {
-    if (argc < 3 )
+    struct Host h ;
+    h.ip = ip;
+    h.port = port;
+    int  fd = new_tcp_connection(ip,port);
+
+    if (fd < 0 )
     {
-       printf("arg wrong, hyc ip port"); 
+       DEBUG_PRINT("fd is %d",fd) ;
        return -1;
     }
 
-    char * ip = argv[1];
-    unsigned int  port = atoi(argv[2]);
+    struct ev_io http_readable;
+    ev_io_init (&http_readable,http_read,fd,EV_READ);
+    http_readable.data = &h;
+    ev_io_start(main_loop,&http_readable);
+}
+
+int main(int argc , char ** argv)
+{
+
+
+    char * ip = NULL;
+    unsigned int  port  = 0;
+    unsigned int  concurrent  = 0;
+    int c ;
+
+    opterr = 0;
+    while( (c= getopt(argc, argv , "c:h:p:")) != -1 )
+    {
+   	switch(c)
+	    {
+	   	case 'c': 
+			concurrent = atoi(optarg);
+			break;
+	   	case 'h': 
+			ip = optarg;
+			break;
+	   	case 'p': 
+			port = atoi(optarg);
+			break;
+	    
+		default:
+			abort();
+	    }	
+    
+    }
+
+    DEBUG_PRINT("%s:%d concurrent:%d\n",ip,port,concurrent);
+    if (ip == NULL || port == 0 || concurrent == 0)
+    {
+       DEBUG_PRINT("args wrong");
+       exit(-1); 
+    }
 
     struct Host h ;
     h.ip = ip;
@@ -96,7 +143,7 @@ int main(int argc , char ** argv)
 
     if (fd < 0 )
     {
-       printf("fd is %d",fd) ;
+       DEBUG_PRINT("fd is %d",fd) ;
        return -1;
     }
 
@@ -107,7 +154,7 @@ int main(int argc , char ** argv)
     http_readable.data = &h;
     ev_io_start(main_loop,&http_readable);
 
-   char *req = "GET / HTTP/1.1\r\nHost: 127.0.0.1:19890\r\n\r\n";
+    char *req = "GET / HTTP/1.1\r\nHost: 127.0.0.1:19890\r\n\r\n";
     write(fd,req,strlen(req));
     ev_run(main_loop, 0);
 }
