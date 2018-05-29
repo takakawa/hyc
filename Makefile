@@ -1,8 +1,7 @@
 ifeq ($(DEBUG),true)
-
-FLAGS=-D DEBUG
+   FLAGS=-DDEBUG
 else
-FLAGS=
+   FLAGS=
 endif
 
 build:

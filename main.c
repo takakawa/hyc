@@ -14,12 +14,8 @@
 #define WRITE_BUF_LEN (4096)
 #define ERROR_ON(fd)  if(fd < 0) return -1;
 
-#ifdef DEBUG
-#define DEBUG_PRINT(format,args...)   fprintf(stdout,"[DEBUG]%s:%d->"format,__func__,__LINE__,##args)
-#else
-#define DEBUG_PRINT(format,args...)   1; 
-#endif
 
+#define DEBUG_PRINT(format,args...)   fprintf(stdout,"[DEBUG]%s:%d->"format,__func__,__LINE__,##args)
 extern char *optarg;
 extern int optopt;
 extern int opterr;
@@ -76,14 +72,13 @@ static int new_tcp_connection(const char *ip, unsigned int port)
 
 char * build_http_request(const char* method, char *url,const char *body)
 {
-       DEBUG_PRINT("STUB4\n");
        char * buf = malloc(WRITE_BUF_LEN);
 
        if (buf == NULL)
        {
            return NULL; 
        }
-
+       DEBUG_PRINT("aaaa");
 
        strcpy(buf,method);
        strcat(buf," ");
@@ -115,9 +110,11 @@ char * build_http_request(const char* method, char *url,const char *body)
 	       free(buf);
 	       return NULL;
        }
+       /* 
        DEBUG_PRINT("request built:\n----------------------------"\
                    "------------------------------\n%s\n---------"\
                    "-------------------------------------------------\n",buf);
+       */ 
        return buf;
 }
   
@@ -142,13 +139,14 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
 	   request_cnt ++; 
 
 	   
+       
 	   DEBUG_PRINT("http request cnt: %d\n",request_cnt);
 	   DEBUG_PRINT("path:%s\n",h.path);
 	   DEBUG_PRINT("recv:\n"\
 	               "------------------------------------------"\
                    "----------------\n%s\n--------------------"\
                    "--------------------------------------\n",buf);
-
+        
        if(request_cnt >= h.n )
 	   {
             close(stat->fd);
@@ -165,6 +163,7 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
 }
 int new_tcp_connection_ev(char * ip, unsigned int port,struct ev_loop *main_loop)
 {
+    DEBUG_PRINT("enter tcp:%s",ip);
     int  fd = new_tcp_connection(ip,port);
 
     if (fd < 0 )
@@ -186,6 +185,7 @@ int new_tcp_connection_ev(char * ip, unsigned int port,struct ev_loop *main_loop
     ev_io_start(main_loop,http_readable);
 
 
+    DEBUG_PRINT("write data..");
     char *req = build_http_request("GET",h.path,"");
     write(fd,req,strlen(req));
     free(req);
