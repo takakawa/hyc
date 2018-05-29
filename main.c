@@ -82,7 +82,7 @@ char * build_http_request(const char* method, char *url,const char *body)
        }
 
        DEBUG_PRINT("input path:%s\n",url);
-       DEBUG_PRINT("host:%s\n",parsed->host);
+       DEBUG_PRINT("hostname:%s\n",parsed->hostname);
        DEBUG_PRINT("path:%s\n",parsed->path);
 
        strcpy(buf,method);
@@ -90,11 +90,10 @@ char * build_http_request(const char* method, char *url,const char *body)
        strcat(buf,parsed->path);
        strcat(buf," HTTP/1.1\r\n");
        strcat(buf,"User-Agent: hyc\r\n");
-       strcat(buf,"Accept: */*\r\n");
-
        strcat(buf,"Host: ");
-       strcat(buf, parsed->host);
+       strcat(buf, parsed->hostname);
        strcat(buf,"\r\n");
+       strcat(buf,"Accept: */*\r\n");
 
        if (strcmp("GET",method) == 0)
        {
@@ -117,6 +116,9 @@ char * build_http_request(const char* method, char *url,const char *body)
 	       free(parsed);
 	       return NULL;
        }
+       DEBUG_PRINT("request built:\n----------------------------"\
+                   "------------------------------\n%s\n---------"\
+                   "-------------------------------------------------\n",buf);
        free(parsed);
        return buf;
 }
@@ -128,15 +130,14 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
    int n = read(stat->fd,buf,1000);
    if (n == 0)
    {
-	DEBUG_PRINT("remote closed client\n","") ;
-	close(stat->fd);
-	ev_io_stop(loop, stat);
-	free(stat);
+        DEBUG_PRINT("remote closed client\n","") ;
+        close(stat->fd);
+        ev_io_stop(loop, stat);
+        free(stat);
 
-	//struct Host *h = (struct Host *) stat->data;
-	DEBUG_PRINT("reconnect to  client:%s:%d\n",h.ip,h.port) ;
-	new_tcp_connection_ev(h.ip, h.port ,loop);
-	request_cnt  ++;
+        //struct Host *h = (struct Host *) stat->data;
+        DEBUG_PRINT("reconnect to  client:%s:%d\n",h.ip,h.port) ;
+        new_tcp_connection_ev(h.ip, h.port ,loop);
    }
    else
    {
@@ -144,15 +145,18 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
 
 	   if(request_cnt > h.n)
 	   {
-		close(stat->fd);
-		ev_io_stop(loop, stat);
-		free(stat);
-		DEBUG_PRINT("run %d times quit",request_cnt);
-     		return; 
+            close(stat->fd);
+            ev_io_stop(loop, stat);
+            free(stat);
+            DEBUG_PRINT("run %d times quit",request_cnt);
+            return; 
 	   }
-	   DEBUG_PRINT("http_read: %d\n",request_cnt);
-	   DEBUG_PRINT("recv:%s\n",buf);
+	   DEBUG_PRINT("http request cnt: %d\n",request_cnt);
 	   DEBUG_PRINT("path:%s\n",h.path);
+	   DEBUG_PRINT("recv:\n");
+	   DEBUG_PRINT("\n------------------------------------------"\
+                   "----------------\n%s\n--------------------"\
+                   "--------------------------------------\n",buf);
 	   char *req = build_http_request("GET",h.path,"");
 	   write(stat->fd,req,strlen(req));
 	   free(req);
@@ -212,6 +216,7 @@ int main(int argc , char ** argv)
 			break;
 	    
 		default:
+            DEBUG_PRINT("not support args:usage hyc -u http://www.test.com/test?useid=1#aa");
 			abort();
 	    }	
     
@@ -220,7 +225,7 @@ int main(int argc , char ** argv)
 
     if ( concurrent == 0 || url == NULL)
     {
-       DEBUG_PRINT("args wrong","");
+       DEBUG_PRINT("args wrong");
        exit(-1); 
     }
 
