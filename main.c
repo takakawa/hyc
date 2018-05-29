@@ -143,20 +143,23 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
    {
 	   request_cnt ++; 
 
-	   if(request_cnt > h.n)
+	   
+	   DEBUG_PRINT("http request cnt: %d\n",request_cnt);
+	   DEBUG_PRINT("path:%s\n",h.path);
+	   DEBUG_PRINT("recv:\n"\
+	               "------------------------------------------"\
+                   "----------------\n%s\n--------------------"\
+                   "--------------------------------------\n",buf);
+
+       if(request_cnt >= h.n )
 	   {
             close(stat->fd);
             ev_io_stop(loop, stat);
             free(stat);
-            DEBUG_PRINT("run %d times quit",request_cnt);
+            DEBUG_PRINT("run %d times quit\n",request_cnt);
             return; 
 	   }
-	   DEBUG_PRINT("http request cnt: %d\n",request_cnt);
-	   DEBUG_PRINT("path:%s\n",h.path);
-	   DEBUG_PRINT("recv:\n");
-	   DEBUG_PRINT("\n------------------------------------------"\
-                   "----------------\n%s\n--------------------"\
-                   "--------------------------------------\n",buf);
+
 	   char *req = build_http_request("GET",h.path,"");
 	   write(stat->fd,req,strlen(req));
 	   free(req);
