@@ -115,13 +115,13 @@ char * build_http_request(const char* method, char *url,const char *body)
        {
 	       DEBUG_PRINT("Current not supoorted method","");
 	       free(buf);
-	       free(parsed);
+	       url_free(parsed);
 	       return NULL;
        }
        DEBUG_PRINT("request built:\n----------------------------"\
                    "------------------------------\n%s\n---------"\
                    "-------------------------------------------------\n",buf);
-       free(parsed);
+       url_free(parsed);
        return buf;
 }
   
@@ -245,7 +245,7 @@ int main(int argc , char ** argv)
     DEBUG_PRINT("port:%s\n",parsed->port);
     DEBUG_PRINT("path:%s\n",parsed->path);
 
-    h.ip = parsed->host;
+    h.ip = strdup(parsed->host);
     h.port = atoi(parsed->port);
     h.path = url;
     h.n = n;
