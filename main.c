@@ -10,6 +10,7 @@
 #include<fcntl.h>
 #include"url.h"
 
+#define READ_BUF_LEN (4096)
 #define ERROR_ON(fd)  if(fd < 0) return -1;
 #define DEBUG_PRINT(format,args...)   fprintf(stdout,"[DEBUG]%s:%d->"format,__func__,__LINE__,##args)
 extern char *optarg;
@@ -78,6 +79,7 @@ char * build_http_request(const char* method, char *url,const char *body)
        url_data_t *parsed = url_parse(url);
        if(parsed == NULL)
        {
+           free(buf);
            return NULL; 
        }
 
@@ -97,7 +99,7 @@ char * build_http_request(const char* method, char *url,const char *body)
 
        if (strcmp("GET",method) == 0)
        {
-	    strcat(buf,"\r\n");
+        strcat(buf,"\r\n");
        }
        else if(strcmp("POST",method) ==0)
        {
@@ -126,8 +128,8 @@ char * build_http_request(const char* method, char *url,const char *body)
 void http_read(struct ev_loop *loop, ev_io *stat, int events)
 {
    static int request_cnt  = 0;
-   char buf[1000] = {'\0'};
-   int n = read(stat->fd,buf,1000);
+   char buf[READ_BUF_LEN] = {'\0'};
+   int n = read(stat->fd,buf, READ_BUF_LEN);
    if (n == 0)
    {
         DEBUG_PRINT("remote closed client\n","") ;
@@ -162,6 +164,7 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
 
 	   char *req = build_http_request("GET",h.path,"");
 	   write(stat->fd,req,strlen(req));
+       DEBUG_PRINT("free1:%p\n",req);
 	   free(req);
    }
 }
@@ -179,7 +182,6 @@ int new_tcp_connection_ev(char * ip, unsigned int port,struct ev_loop *main_loop
 
     if (!http_readable)
     {
-        
        DEBUG_PRINT("ev_io malloc err %d",http_readable) ;
        return -1;
     }
@@ -191,6 +193,7 @@ int new_tcp_connection_ev(char * ip, unsigned int port,struct ev_loop *main_loop
 
     char *req = build_http_request("GET",h.path,"");
     write(fd,req,strlen(req));
+    DEBUG_PRINT("free1:%p\n",req);
     free(req);
 }
 
