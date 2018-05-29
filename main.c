@@ -11,8 +11,15 @@
 #include"url.h"
 
 #define READ_BUF_LEN (4096)
+#define WRITE_BUF_LEN (4096)
 #define ERROR_ON(fd)  if(fd < 0) return -1;
+
+#ifdef DEBUG
 #define DEBUG_PRINT(format,args...)   fprintf(stdout,"[DEBUG]%s:%d->"format,__func__,__LINE__,##args)
+#else
+#define DEBUG_PRINT(format,args...)   1; 
+#endif
+
 extern char *optarg;
 extern int optopt;
 extern int opterr;
@@ -69,31 +76,22 @@ static int new_tcp_connection(const char *ip, unsigned int port)
 
 char * build_http_request(const char* method, char *url,const char *body)
 {
-       char * buf = malloc(4096);
+       DEBUG_PRINT("STUB4\n");
+       char * buf = malloc(WRITE_BUF_LEN);
 
        if (buf == NULL)
        {
            return NULL; 
        }
 
-       url_data_t *parsed = url_parse(url);
-       if(parsed == NULL)
-       {
-           free(buf);
-           return NULL; 
-       }
-
-       DEBUG_PRINT("input path:%s\n",url);
-       DEBUG_PRINT("hostname:%s\n",parsed->hostname);
-       DEBUG_PRINT("path:%s\n",parsed->path);
 
        strcpy(buf,method);
        strcat(buf," ");
-       strcat(buf,parsed->path);
+       strcat(buf,h.path);
        strcat(buf," HTTP/1.1\r\n");
        strcat(buf,"User-Agent: hyc\r\n");
        strcat(buf,"Host: ");
-       strcat(buf, parsed->hostname);
+       strcat(buf, h.ip);
        strcat(buf,"\r\n");
        strcat(buf,"Accept: */*\r\n");
 
@@ -115,13 +113,11 @@ char * build_http_request(const char* method, char *url,const char *body)
        {
 	       DEBUG_PRINT("Current not supoorted method","");
 	       free(buf);
-	       url_free(parsed);
 	       return NULL;
        }
        DEBUG_PRINT("request built:\n----------------------------"\
                    "------------------------------\n%s\n---------"\
                    "-------------------------------------------------\n",buf);
-       url_free(parsed);
        return buf;
 }
   
@@ -138,8 +134,8 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
         free(stat);
 
         //struct Host *h = (struct Host *) stat->data;
-        DEBUG_PRINT("reconnect to  client:%s:%d\n",h.ip,h.port) ;
-        new_tcp_connection_ev(h.ip, h.port ,loop);
+        //DEBUG_PRINT("reconnect to  client:%s:%d\n",h.ip,h.port) ;
+        //new_tcp_connection_ev(h.ip, h.port ,loop);
    }
    else
    {
@@ -164,7 +160,6 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
 
 	   char *req = build_http_request("GET",h.path,"");
 	   write(stat->fd,req,strlen(req));
-       DEBUG_PRINT("free1:%p\n",req);
 	   free(req);
    }
 }
@@ -186,14 +181,13 @@ int new_tcp_connection_ev(char * ip, unsigned int port,struct ev_loop *main_loop
        return -1;
     }
 
-    ev_io_init (http_readable,http_read,fd,EV_READ);
+    ev_io_init(http_readable,http_read,fd,EV_READ);
     //http_readable.data = &h;
     ev_io_start(main_loop,http_readable);
 
 
     char *req = build_http_request("GET",h.path,"");
     write(fd,req,strlen(req));
-    DEBUG_PRINT("free1:%p\n",req);
     free(req);
 }
 
@@ -203,16 +197,24 @@ int main(int argc , char ** argv)
     int i = 0;
     int n = 10000;
     unsigned int  concurrent  = 0;
+    unsigned int  port  = 0;
     char * url = NULL;
+    char * host = NULL;
     int c ;
 
     opterr = 0;
-    while( (c= getopt(argc, argv , "c:u:n:")) != -1 )
+    while( (c= getopt(argc, argv , "c:u:n:h:p:")) != -1 )
     {
    	switch(c)
 	    {
 	   	case 'c': 
 			concurrent = atoi(optarg);
+			break;
+	   	case 'p': 
+			port = atoi(optarg);
+			break;
+	   	case 'h': 
+			host = optarg;
 			break;
 	   	case 'n': 
 			n = atoi(optarg);
@@ -235,18 +237,9 @@ int main(int argc , char ** argv)
        exit(-1); 
     }
 
-    url_data_t *parsed = url_parse(url);
-    if (parsed == NULL)
-    {
-       DEBUG_PRINT("URL WRONG:%s\n",url); 
-       exit(-1);
-    }
-    DEBUG_PRINT("hostname:%s\n",parsed->host);
-    DEBUG_PRINT("port:%s\n",parsed->port);
-    DEBUG_PRINT("path:%s\n",parsed->path);
 
-    h.ip = strdup(parsed->host);
-    h.port = atoi(parsed->port);
+    h.ip = host;
+    h.port = port;
     h.path = url;
     h.n = n;
 
@@ -260,5 +253,4 @@ int main(int argc , char ** argv)
     }
 
     ev_run(main_loop, 0);
-    url_free(parsed);
 }

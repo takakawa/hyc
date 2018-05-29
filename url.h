@@ -189,12 +189,24 @@ static char *
 get_part (char *url, const char *format, int l) {
   bool has = false;
   char *tmp = malloc(sizeof(char));
+  if(!tmp)return NULL;
   char *tmp_url = strdup(url);
+  if(!tmp_url)
+  {
+      free(tmp);
+      return NULL;
+  }
   char *fmt_url = strdup(url);
-  char *ret = malloc(sizeof(char));
+  if(!fmt_url)
+  {
+  
+      free(tmp);
+      free(tmp_url);
+      return NULL;
+  }
+  char *ret = NULL; 
 
-  if (!tmp || !tmp_url || !fmt_url || !ret)
-    return NULL;
+
 
   strcpy(tmp, "");
   strcpy(fmt_url, "");
@@ -234,7 +246,12 @@ url_parse (char *url) {
   bool is_ssh = false;
 
   char *protocol = url_get_protocol(tmp_url);
-  if (!protocol) return NULL;
+  if (!protocol)
+  {
+      free(data);
+      free(tmp_url);
+      return NULL;
+  }
   // length of protocol plus ://
   int protocol_len = (int) strlen(protocol) + 3;
   data->protocol = protocol;
@@ -257,7 +274,14 @@ url_parse (char *url) {
               ? get_part(tmp_url, "%[^:]", protocol_len + auth_len)
               : get_part(tmp_url, "%[^/]", protocol_len + auth_len);
 
-  if (!hostname) return NULL;
+  if (!hostname) 
+  {
+      free(data);
+      free(tmp_url);
+      free(protocol);
+      free(auth);
+      return NULL;
+  }
   int hostname_len = (int) strlen(hostname);
   char *tmp_hostname = strdup(hostname);
   data->hostname = hostname;
@@ -345,6 +369,7 @@ url_is_ssh (char *str) {
 
   }
 
+  free(str);
   return false;
 }
 
