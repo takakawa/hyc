@@ -8,17 +8,20 @@
 #include<netinet/in.h>
 #include<ev.h>
 #include<fcntl.h>
-#include"url.h"
+#include <errno.h>
 
 #define READ_BUF_LEN (4096)
 #define WRITE_BUF_LEN (4096)
 #define ERROR_ON(fd)  if(fd < 0) return -1;
 
-
+#ifdef DEBUG
 #define DEBUG_PRINT(format,args...)   fprintf(stdout,"[DEBUG]%s:%d->"format,__func__,__LINE__,##args)
+#else
+#define DEBUG_PRINT(format,args..) ;
+#endif
 extern char *optarg;
-extern int optopt;
-extern int opterr;
+extern int   optopt;
+extern int   opterr;
 
 int new_tcp_connection_ev(char * ip, unsigned int port,struct ev_loop *main_loop);
 
@@ -43,8 +46,10 @@ int setnonblock(int sockfd)
 {
     if (fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFD, 0)|O_NONBLOCK) == -1) 
     {
+        DEBUG_PRINT("set non block err\n");
         return -1;
     }
+    DEBUG_PRINT("set non block ok\n");
     return 0;
 }
 static int new_tcp_connection(const char *ip, unsigned int port)
@@ -55,17 +60,22 @@ static int new_tcp_connection(const char *ip, unsigned int port)
 
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     ERROR_ON(fd);
-    setnonblock(fd);
+    ret = setnonblock(fd);
+
+    if (ret < 0)
+    {
+       return ret; 
+    }
     setaddress(ip, port , &addr);
     ret = connect(fd, (struct sockaddr*)(&addr), sizeof(addr));
-/*    
+    /*
     if(ret < 0)
     {
        DEBUG_PRINT("Connect Error:%d\n",ret); 
        return -2;
     }
-    
     */
+    
 
     return fd;
 }
@@ -78,7 +88,7 @@ char * build_http_request(const char* method, char *url,const char *body)
        {
            return NULL; 
        }
-       DEBUG_PRINT("aaaa");
+       DEBUG_PRINT("enter build http request\n");
 
        strcpy(buf,method);
        strcat(buf," ");
@@ -120,6 +130,7 @@ char * build_http_request(const char* method, char *url,const char *body)
   
 void http_read(struct ev_loop *loop, ev_io *stat, int events)
 {
+   DEBUG_PRINT("enter http_read\n");
    static int request_cnt  = 0;
    char buf[READ_BUF_LEN] = {'\0'};
    int n = read(stat->fd,buf, READ_BUF_LEN);
@@ -157,18 +168,19 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
 	   }
 
 	   char *req = build_http_request("GET",h.path,"");
+       DEBUG_PRINT("%s\n",req);
 	   write(stat->fd,req,strlen(req));
 	   free(req);
    }
 }
 int new_tcp_connection_ev(char * ip, unsigned int port,struct ev_loop *main_loop)
 {
-    DEBUG_PRINT("enter tcp:%s",ip);
+    DEBUG_PRINT("enter tcp:%s\n",ip);
     int  fd = new_tcp_connection(ip,port);
 
     if (fd < 0 )
     {
-       DEBUG_PRINT("fd is %d",fd) ;
+       DEBUG_PRINT("fd is %d\n",fd) ;
        return -1;
     }
 
@@ -176,7 +188,7 @@ int new_tcp_connection_ev(char * ip, unsigned int port,struct ev_loop *main_loop
 
     if (!http_readable)
     {
-       DEBUG_PRINT("ev_io malloc err %d",http_readable) ;
+       DEBUG_PRINT("ev_io malloc err %d\n",http_readable) ;
        return -1;
     }
 
@@ -185,9 +197,25 @@ int new_tcp_connection_ev(char * ip, unsigned int port,struct ev_loop *main_loop
     ev_io_start(main_loop,http_readable);
 
 
-    DEBUG_PRINT("write data..");
+    DEBUG_PRINT("write data..\n");
     char *req = build_http_request("GET",h.path,"");
-    write(fd,req,strlen(req));
+    DEBUG_PRINT(" data %d\n",strlen(req));
+
+    int ret = -1;
+    while (ret == -1 ) // 解决第一次写入会概率出现EAGIN的问题，采用循环写，来判断是否会EAGIN
+    {
+         ret = write(fd,req,strlen(req));
+        if( errno == EAGAIN)// 实际测试中第一次也会出现反回EAGIN的情况，这时buf是第一次写入数据，why?
+        {
+            DEBUG_PRINT(" ret %d errno:%d desc:%s\n",ret,errno,strerror(errno));
+            continue ;
+        }
+        else if(errno != EAGAIN)
+        {
+            DEBUG_PRINT(" ret %d errno:%d desc:%s\n",ret,errno,strerror(errno));
+            break;
+        }
+    }
     free(req);
 }
 
@@ -249,7 +277,7 @@ int main(int argc , char ** argv)
 
     for(i = 0; i< concurrent; i++)
     {
-	    new_tcp_connection_ev(h.ip, h.port ,main_loop);
+	   new_tcp_connection_ev(h.ip, h.port ,main_loop);
     }
 
     ev_run(main_loop, 0);
