@@ -9,6 +9,7 @@
 #include<ev.h>
 #include<fcntl.h>
 #include <errno.h>
+#include <sys/time.h> 
 
 #define READ_BUF_LEN (4096)
 #define WRITE_BUF_LEN (4096)
@@ -35,6 +36,12 @@ struct Host
 
 struct Host h ;
 
+long getCurrentTime()    
+{    
+     struct timeval tv;    
+     gettimeofday(&tv,NULL);    
+     return tv.tv_sec * 1000 + tv.tv_usec / 1000;    
+}
 void setaddress(const char* ip,int port,struct sockaddr_in* addr)
 {  
     memset(addr,0, sizeof(*addr));  
@@ -124,10 +131,12 @@ char * build_http_request(const char* method, char *url,const char *body)
        return buf;
 }
   
+static int request_cnt   = 0;
+static long request_total_time  = 0;
+static long request_send_timestamp = 0;
 void http_read(struct ev_loop *loop, ev_io *stat, int events)
 {
    DEBUG_PRINT("enter http_read\n");
-   static int request_cnt  = 0;
    char buf[READ_BUF_LEN] = {'\0'};
    int n = read(stat->fd,buf, READ_BUF_LEN);
    if (n == 0)
@@ -138,8 +147,8 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
         free(stat);
 
         //struct Host *h = (struct Host *) stat->data;
-        //DEBUG_PRINT("reconnect to  client:%s:%d\n",h.ip,h.port) ;
-        //new_tcp_connection_ev(h.ip, h.port ,loop);
+        DEBUG_PRINT("reconnect to  client:%s:%d\n",h.ip,h.port) ;
+        new_tcp_connection_ev(h.ip, h.port ,loop);
    }
    else
    {
@@ -153,7 +162,9 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
 	               "------------------------------------------"\
                    "----------------\n%s\n--------------------"\
                    "--------------------------------------\n",buf);
-        
+       
+        request_total_time += (getCurrentTime()- request_send_timestamp );
+
        if(request_cnt >= h.n )
 	   {
             close(stat->fd);
@@ -166,6 +177,7 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
 	   char *req = build_http_request("GET",h.path,"");
        DEBUG_PRINT("%s\n",req);
 	   write(stat->fd,req,strlen(req));
+        request_send_timestamp = getCurrentTime();
 	   free(req);
    }
 }
@@ -197,29 +209,33 @@ int new_tcp_connection_ev(char * ip, unsigned int port,struct ev_loop *main_loop
     char *req = build_http_request("GET",h.path,"");
     DEBUG_PRINT(" data %d\n",strlen(req));
 
-    int ret = -1;
-    while (ret == -1 ) // 解决第一次写入会概率出现EAGIN的问题，采用循环写，来判断是否会EAGIN
+     int ret = write(fd,req,strlen(req));
+    request_send_timestamp = getCurrentTime();
+    if( errno == EAGAIN)// 实际测试中第一次也会出现反回EAGIN的情况，这时buf是第一次写入数据，why?
     {
-         ret = write(fd,req,strlen(req));
-        if( errno == EAGAIN)// 实际测试中第一次也会出现反回EAGIN的情况，这时buf是第一次写入数据，why?
-        {
-            DEBUG_PRINT(" ret %d errno:%d desc:%s\n",ret,errno,strerror(errno));
-            continue ;
-        }
-        else if(errno != EAGAIN)
-        {
-            DEBUG_PRINT(" ret %d errno:%d desc:%s\n",ret,errno,strerror(errno));
-            break;
-        }
+        DEBUG_PRINT(" ret %d errno:%d desc:%s\n",ret,errno,strerror(errno));
+    }
+    else if(errno != EAGAIN)
+    {
+        DEBUG_PRINT(" ret %d errno:%d desc:%s\n",ret,errno,strerror(errno));
     }
     free(req);
 }
+static void timer_callback(struct ev_loop *loop,ev_timer *w,int revents)
+{
 
+    printf("Result\n");
+    printf("Total SendRequest: %d\n",request_cnt);
+    printf("Total Time(ms)   : %d\n",request_total_time);
+    printf("Total QPS        : %f\n",(float)(request_cnt)/((float)(request_total_time)/1000));
+    exit(0);
+}
 int main(int argc , char ** argv)
 {
 
     int i = 0;
     int n = 10000;
+    unsigned int  t = 10;
     unsigned int  concurrent  = 0;
     unsigned int  port  = 0;
     char * url = NULL;
@@ -227,7 +243,7 @@ int main(int argc , char ** argv)
     int c ;
 
     opterr = 0;
-    while( (c= getopt(argc, argv , "c:u:n:h:p:")) != -1 )
+    while( (c= getopt(argc, argv , "c:u:n:h:p:t:")) != -1 )
     {
    	switch(c)
 	    {
@@ -242,6 +258,9 @@ int main(int argc , char ** argv)
 			break;
 	   	case 'n': 
 			n = atoi(optarg);
+			break;
+	   	case 't': 
+			t = atoi(optarg);
 			break;
 	   	case 'u': 
 			url = optarg;
@@ -276,5 +295,12 @@ int main(int argc , char ** argv)
 	   new_tcp_connection_ev(h.ip, h.port ,main_loop);
     }
 
+    if ( t > 0 )
+    {
+        ev_timer timer_watcher;
+        ev_init(&timer_watcher,timer_callback);
+        ev_timer_set(&timer_watcher,t,0);// t秒后开始执行,非周期 
+        ev_timer_start(main_loop,&timer_watcher);
+    }
     ev_run(main_loop, 0);
 }
