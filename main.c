@@ -17,7 +17,7 @@
 #ifdef DEBUG
 #define DEBUG_PRINT(format,args...)   fprintf(stdout,"[DEBUG]%s:%d->"format,__func__,__LINE__,##args)
 #else
-#define DEBUG_PRINT(format,args..) ;
+#define DEBUG_PRINT(format,args...)   1
 #endif
 extern char *optarg;
 extern int   optopt;
@@ -60,23 +60,19 @@ static int new_tcp_connection(const char *ip, unsigned int port)
 
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     ERROR_ON(fd);
+    
+    setaddress(ip, port , &addr);
+    ret = connect(fd, (struct sockaddr*)(&addr), sizeof(addr));
+    if(ret < 0)
+    {
+       DEBUG_PRINT("Connect Error:%d  errno:%d %s\n",ret,errno,strerror(errno)); 
+       return -2;
+    }
     ret = setnonblock(fd);
-
     if (ret < 0)
     {
        return ret; 
     }
-    setaddress(ip, port , &addr);
-    ret = connect(fd, (struct sockaddr*)(&addr), sizeof(addr));
-    /*
-    if(ret < 0)
-    {
-       DEBUG_PRINT("Connect Error:%d\n",ret); 
-       return -2;
-    }
-    */
-    
-
     return fd;
 }
 
