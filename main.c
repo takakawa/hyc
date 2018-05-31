@@ -58,8 +58,8 @@ struct Host
    char *path;
 };
 
-struct Host h ;
-unsigned int g_connection_id = 0;
+struct   Host h;
+unsigned int  g_connection_id = 0;
 
 struct connection *  new_tcp_connection_chain(char * ip, unsigned int port,struct ev_loop *main_loop);
 int continue_tcp_connection(struct connection *conn, struct ev_loop *main_loop);
@@ -294,27 +294,32 @@ struct connection * new_tcp_connection_chain(char * ip, unsigned int port,struct
 static void timer_callback(struct ev_loop *loop,ev_timer *w,int revents)
 {
 
-    int request_cnt = 0;
-    int request_total_time= 0;
+    int request_cnt          = 0;
+    int request_total_time   = 0;
+    int request_qps          = 0;
     struct timer_data * data = w->data;
  
     for(int i=0; i< data->conns_num; i++)
     {
         int request_cnt_tmp        = data->conns[i]->request_count; 
         int request_total_time_tmp = data->conns[i]->request_total_time; 
+        int request_qps_tmp        = (int)((float)(request_cnt_tmp)/((float)(request_total_time_tmp)/1000));
 
         printf("Connection %3d Result:\n",data->conns[i]->id);
         printf("Total SendRequest: %d\n",request_cnt_tmp);
         printf("Total Time(ms)   : %d\n",request_total_time_tmp);
-        printf("Total QPS        : %f\n",(float)(request_cnt_tmp)/((float)(request_total_time_tmp)/1000));
-        request_cnt        += data->conns[i]->request_count; 
-        request_total_time += data->conns[i]->request_total_time; 
+        printf("Total QPS        : %d\n",request_qps_tmp);
+        printf("Request Latency  : %f ms\n",(float)request_total_time_tmp/request_cnt_tmp);
+        request_qps                += request_qps_tmp;
+        request_cnt                += data->conns[i]->request_count; 
+        request_total_time         += data->conns[i]->request_total_time; 
     }
     
     printf("\nTotal Result:\n");
     printf("Total SendRequest: %d\n",request_cnt);
     printf("Total Time(ms)   : %d\n",request_total_time);
-    printf("Total QPS        : %f\n",(float)(request_cnt)/((float)(request_total_time)/1000));
+    printf("Total QPS        : %d\n",request_qps);
+    printf("Request Latency  : %f ms\n",(float)request_total_time/request_cnt);
     exit(0);
 }
 
