@@ -29,7 +29,11 @@
 extern char *optarg;
 extern int   optopt;
 extern int   opterr;
-
+struct timer_data
+{
+   struct connection ** conns;
+   unsigned int  conns_num;
+};
 struct connection 
 {
     unsigned int id;// connection id
@@ -57,7 +61,7 @@ struct Host
 struct Host h ;
 unsigned int g_connection_id = 0;
 
-int new_tcp_connection_chain(char * ip, unsigned int port,struct ev_loop *main_loop);
+struct connection *  new_tcp_connection_chain(char * ip, unsigned int port,struct ev_loop *main_loop);
 int continue_tcp_connection(struct connection *conn, struct ev_loop *main_loop);
 
 long getCurrentTime()    
@@ -115,7 +119,6 @@ char * build_http_request(const char* method, char *url,const char *body)
        {
            return NULL; 
        }
-       DEBUG_PRINT("enter build http request\n");
 
        strcpy(buf,method);
        strcat(buf," ");
@@ -175,8 +178,7 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
 	   conn->request_count ++; 
 
        
-	   DEBUG_PRINT("http request cnt: %d\n",conn->request_count);
-	   DEBUG_PRINT("path:%s\n",h.path);
+	   DEBUG_PRINT("conn[%d] http request cnt: %d\n",conn->id, conn->request_count);
 	   DEBUG_PRINT("recv:\n"\
 	               "------------------------------------------"\
                    "----------------\n%s\n--------------------"\
@@ -190,12 +192,11 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
 
             close(stat->fd);
             ev_io_stop(loop, stat);
-            free(conn);
             free(stat);
             return; 
 	   }
 
-       DEBUG_PRINT("%s\n",conn->writebuf);
+       DEBUG_PRINT("send:\n%s\n",conn->writebuf);
 	   write(stat->fd,conn->writebuf,strlen(conn->writebuf));
        conn->request_send_timestamp = getCurrentTime();
    }
@@ -237,14 +238,14 @@ int continue_tcp_connection(struct connection *conn, struct ev_loop *main_loop)
     }
 
 }
-int new_tcp_connection_chain(char * ip, unsigned int port,struct ev_loop *main_loop)
+struct connection * new_tcp_connection_chain(char * ip, unsigned int port,struct ev_loop *main_loop)
 {
     int  fd = new_tcp_connection(ip,port);
 
     if (fd < 0 )
     {
        PRINT("fd is %d\n",fd) ;
-       return -1;
+       exit(-1);
     }
 
     struct ev_io * http_readable = malloc(sizeof(struct ev_io));
@@ -252,21 +253,22 @@ int new_tcp_connection_chain(char * ip, unsigned int port,struct ev_loop *main_l
     if (!http_readable)
     {
        PRINT("ev_io malloc err %d\n",http_readable) ;
-       return -1;
+       exit(-1);
     }
     struct connection * conn = malloc(sizeof(struct connection));
     if(!conn)
     {
     
        PRINT("conn malloc err \n") ;
-       return -1;
+       exit(-1);
     }
 
     strncpy(conn->host, ip, MAX_HOST_LEN);
-    conn->port            = port;
-    conn->fd              = fd;
-    conn->request_count   = 0;
-    conn->id              = g_connection_id++ ; 
+    conn->port                 = port;
+    conn->fd                   = fd;
+    conn->request_count        = 0;
+    conn->request_total_time   = 0;
+    conn->id                   = g_connection_id++ ; 
 
     ev_io_init(http_readable,http_read,fd,EV_READ);
     http_readable->data = conn;
@@ -287,16 +289,35 @@ int new_tcp_connection_chain(char * ip, unsigned int port,struct ev_loop *main_l
     {
         PRINT("fd:%d ret %d errno:%d desc:%s\n",fd, ret,errno,strerror(errno));
     }
+    return conn;
 }
 static void timer_callback(struct ev_loop *loop,ev_timer *w,int revents)
 {
 
-    PRINT("Result\n");
-    //PRINT("Total SendRequest: %d\n",request_cnt);
-    //PRINT("Total Time(ms)   : %d\n",request_total_time);
-    //PRINT("Total QPS        : %f\n",(float)(request_cnt)/((float)(request_total_time)/1000));
+    int request_cnt = 0;
+    int request_total_time= 0;
+    struct timer_data * data = w->data;
+ 
+    for(int i=0; i< data->conns_num; i++)
+    {
+        int request_cnt_tmp        = data->conns[i]->request_count; 
+        int request_total_time_tmp = data->conns[i]->request_total_time; 
+
+        printf("Connection %3d Result:\n",data->conns[i]->id);
+        printf("Total SendRequest: %d\n",request_cnt_tmp);
+        printf("Total Time(ms)   : %d\n",request_total_time_tmp);
+        printf("Total QPS        : %f\n",(float)(request_cnt_tmp)/((float)(request_total_time_tmp)/1000));
+        request_cnt        += data->conns[i]->request_count; 
+        request_total_time += data->conns[i]->request_total_time; 
+    }
+    
+    printf("\nTotal Result:\n");
+    printf("Total SendRequest: %d\n",request_cnt);
+    printf("Total Time(ms)   : %d\n",request_total_time);
+    printf("Total QPS        : %f\n",(float)(request_cnt)/((float)(request_total_time)/1000));
     exit(0);
 }
+
 int main(int argc , char ** argv)
 {
 
@@ -355,16 +376,22 @@ int main(int argc , char ** argv)
     DEBUG_PRINT("%s:%d concurrent:%d\n",h.ip,h.port,concurrent);
 
     struct ev_loop *main_loop = ev_default_loop(0);
+    
+    struct timer_data timer_data;
+
+    timer_data.conns = malloc(sizeof(struct connection *)*concurrent);
+    timer_data.conns_num = concurrent;
 
     for(i = 0; i< concurrent; i++)
     {
-	   new_tcp_connection_chain(h.ip, h.port ,main_loop);
+	   timer_data.conns[i] = new_tcp_connection_chain(h.ip, h.port ,main_loop);
     }
 
     if ( t > 0 )
     {
         ev_timer timer_watcher;
         ev_init(&timer_watcher,timer_callback);
+        timer_watcher.data = &timer_data;
         ev_timer_set(&timer_watcher,t,0);// t秒后开始执行,非周期 
         ev_timer_start(main_loop,&timer_watcher);
     }
