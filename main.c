@@ -13,18 +13,36 @@
 
 #define READ_BUF_LEN (4096)
 #define WRITE_BUF_LEN (4096)
+#define MAX_URL_LEN (256)
+#define MAX_HOST_LEN (128)
 #define ERROR_ON(fd)  if(fd < 0) return -1;
+
+#define PRINT(format,args...)   fprintf(stdout,"[DEBUG]%s:%d->"format,__func__,__LINE__,##args)
 
 #ifdef DEBUG
 #define DEBUG_PRINT(format,args...)   fprintf(stdout,"[DEBUG]%s:%d->"format,__func__,__LINE__,##args)
 #else
 #define DEBUG_PRINT(format,args...)   1
 #endif
+
 extern char *optarg;
 extern int   optopt;
 extern int   opterr;
 
-int new_tcp_connection_ev(char * ip, unsigned int port,struct ev_loop *main_loop);
+struct connection 
+{
+    unsigned int id;// connection id
+    int          request_count;
+    int          request_start_timestamp; // 本connection开始的时间
+    int          request_send_timestamp; // 每次发送更新这个时间戳
+    int          request_total_time; // connection 处理请求的总时间
+    char         url[MAX_URL_LEN];
+    char         writebuf[WRITE_BUF_LEN ];
+    char         readbuf[READ_BUF_LEN ];
+    char         host[MAX_HOST_LEN];
+    unsigned int port;
+};
+
 
 struct Host
 {
@@ -35,6 +53,9 @@ struct Host
 };
 
 struct Host h ;
+
+int new_tcp_connection_chain(char * ip, unsigned int port,struct ev_loop *main_loop);
+int continue_tcp_connection(struct connection *conn, struct ev_loop *main_loop);
 
 long getCurrentTime()    
 {    
@@ -131,64 +152,57 @@ char * build_http_request(const char* method, char *url,const char *body)
        return buf;
 }
   
-static int request_cnt   = 0;
-static long request_total_time  = 0;
-static long request_send_timestamp = 0;
 void http_read(struct ev_loop *loop, ev_io *stat, int events)
 {
-   DEBUG_PRINT("enter http_read\n");
-   char buf[READ_BUF_LEN] = {'\0'};
-   int n = read(stat->fd,buf, READ_BUF_LEN);
+   struct connection *conn =  stat->data;
+
+   int n = read(stat->fd,conn->readbuf, READ_BUF_LEN);
    if (n == 0)
    {
-        DEBUG_PRINT("remote closed client\n","") ;
+        PRINT("remote closed client\n") ;
         close(stat->fd);
         ev_io_stop(loop, stat);
         free(stat);
 
-        //struct Host *h = (struct Host *) stat->data;
-        DEBUG_PRINT("reconnect to  client:%s:%d\n",h.ip,h.port) ;
-        new_tcp_connection_ev(h.ip, h.port ,loop);
+        PRINT("reconnect to  client:%s:%d\n",h.ip,h.port) ;
+        continue_tcp_connection(conn ,loop);
    }
    else
    {
-	   request_cnt ++; 
+	   conn->request_count ++; 
 
-	   
        
-	   DEBUG_PRINT("http request cnt: %d\n",request_cnt);
+	   DEBUG_PRINT("http request cnt: %d\n",conn->request_count);
 	   DEBUG_PRINT("path:%s\n",h.path);
 	   DEBUG_PRINT("recv:\n"\
 	               "------------------------------------------"\
                    "----------------\n%s\n--------------------"\
-                   "--------------------------------------\n",buf);
+                   "--------------------------------------\n",conn->readbuf);
        
-        request_total_time += (getCurrentTime()- request_send_timestamp );
+        conn->request_total_time += (getCurrentTime()- conn->request_send_timestamp );
 
-       if(request_cnt >= h.n )
+       if(conn->request_count >= h.n )
 	   {
             close(stat->fd);
+            free(conn);
             ev_io_stop(loop, stat);
             free(stat);
-            DEBUG_PRINT("run %d times quit\n",request_cnt);
+            PRINT("run %d times quit\n",conn->request_count);
             return; 
 	   }
 
-	   char *req = build_http_request("GET",h.path,"");
-       DEBUG_PRINT("%s\n",req);
-	   write(stat->fd,req,strlen(req));
-        request_send_timestamp = getCurrentTime();
-	   free(req);
+       DEBUG_PRINT("%s\n",conn->writebuf);
+	   write(stat->fd,conn->writebuf,strlen(conn->writebuf));
+       conn->request_send_timestamp = getCurrentTime();
    }
 }
-int new_tcp_connection_ev(char * ip, unsigned int port,struct ev_loop *main_loop)
+int continue_tcp_connection(struct connection *conn, struct ev_loop *main_loop)
 {
-    DEBUG_PRINT("enter tcp:%s\n",ip);
-    int  fd = new_tcp_connection(ip,port);
+   int  fd = new_tcp_connection(conn->host,conn->port);
 
     if (fd < 0 )
     {
-       DEBUG_PRINT("fd is %d\n",fd) ;
+       PRINT("fd is %d\n",fd) ;
        return -1;
     }
 
@@ -196,21 +210,16 @@ int new_tcp_connection_ev(char * ip, unsigned int port,struct ev_loop *main_loop
 
     if (!http_readable)
     {
-       DEBUG_PRINT("ev_io malloc err %d\n",http_readable) ;
+       PRINT("ev_io malloc err %d\n",http_readable) ;
        return -1;
     }
-
+    
     ev_io_init(http_readable,http_read,fd,EV_READ);
-    //http_readable.data = &h;
+    http_readable->data = conn;
     ev_io_start(main_loop,http_readable);
 
-
-    DEBUG_PRINT("write data..\n");
-    char *req = build_http_request("GET",h.path,"");
-    DEBUG_PRINT(" data %d\n",strlen(req));
-
-     int ret = write(fd,req,strlen(req));
-    request_send_timestamp = getCurrentTime();
+   int ret = write(fd,conn->writebuf,strlen(conn->writebuf));
+    conn->request_send_timestamp = getCurrentTime();
     if( errno == EAGAIN)// 实际测试中第一次也会出现反回EAGIN的情况，这时buf是第一次写入数据，why?
     {
         DEBUG_PRINT(" ret %d errno:%d desc:%s\n",ret,errno,strerror(errno));
@@ -219,28 +228,76 @@ int new_tcp_connection_ev(char * ip, unsigned int port,struct ev_loop *main_loop
     {
         DEBUG_PRINT(" ret %d errno:%d desc:%s\n",ret,errno,strerror(errno));
     }
+
+}
+int new_tcp_connection_chain(char * ip, unsigned int port,struct ev_loop *main_loop)
+{
+    int  fd = new_tcp_connection(ip,port);
+
+    if (fd < 0 )
+    {
+       PRINT("fd is %d\n",fd) ;
+       return -1;
+    }
+
+    struct ev_io * http_readable = malloc(sizeof(struct ev_io));
+
+    if (!http_readable)
+    {
+       PRINT("ev_io malloc err %d\n",http_readable) ;
+       return -1;
+    }
+    struct connection * conn = malloc(sizeof(struct connection));
+    if(!conn)
+    {
+    
+       PRINT("conn malloc err \n") ;
+       return -1;
+    }
+
+    strncpy(conn->host, ip, MAX_HOST_LEN);
+    conn->port = port;
+
+    ev_io_init(http_readable,http_read,fd,EV_READ);
+    http_readable->data = conn;
+    ev_io_start(main_loop,http_readable);
+
+    char *req = build_http_request("GET",h.path,"");
+    strncpy(conn->writebuf,req,WRITE_BUF_LEN);
     free(req);
+
+
+    int ret = write(fd,conn->writebuf,strlen(conn->writebuf));
+    conn->request_send_timestamp = getCurrentTime();
+    if( errno == EAGAIN)// 实际测试中第一次也会出现反回EAGIN的情况，这时buf是第一次写入数据，why?
+    {
+        PRINT(" ret %d errno:%d desc:%s\n",ret,errno,strerror(errno));
+    }
+    else if(errno != EAGAIN)
+    {
+        PRINT(" ret %d errno:%d desc:%s\n",ret,errno,strerror(errno));
+    }
 }
 static void timer_callback(struct ev_loop *loop,ev_timer *w,int revents)
 {
 
-    printf("Result\n");
-    printf("Total SendRequest: %d\n",request_cnt);
-    printf("Total Time(ms)   : %d\n",request_total_time);
-    printf("Total QPS        : %f\n",(float)(request_cnt)/((float)(request_total_time)/1000));
+    PRINT("Result\n");
+    //PRINT("Total SendRequest: %d\n",request_cnt);
+    //PRINT("Total Time(ms)   : %d\n",request_total_time);
+    //PRINT("Total QPS        : %f\n",(float)(request_cnt)/((float)(request_total_time)/1000));
     exit(0);
 }
 int main(int argc , char ** argv)
 {
 
     int i = 0;
+    int c ;
     int n = 10000;
     unsigned int  t = 10;
     unsigned int  concurrent  = 0;
     unsigned int  port  = 0;
-    char * url = NULL;
+    char * url  = NULL;
     char * host = NULL;
-    int c ;
 
     opterr = 0;
     while( (c= getopt(argc, argv , "c:u:n:h:p:t:")) != -1 )
@@ -270,7 +327,6 @@ int main(int argc , char ** argv)
             DEBUG_PRINT("not support args:usage hyc -u http://www.test.com/test?useid=1#aa");
 			abort();
 	    }	
-    
     }
 
 
@@ -292,7 +348,7 @@ int main(int argc , char ** argv)
 
     for(i = 0; i< concurrent; i++)
     {
-	   new_tcp_connection_ev(h.ip, h.port ,main_loop);
+	   new_tcp_connection_chain(h.ip, h.port ,main_loop);
     }
 
     if ( t > 0 )
