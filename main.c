@@ -222,7 +222,7 @@ int continue_tcp_connection(struct connection *conn, struct ev_loop *main_loop)
     http_readable->data = conn;
     ev_io_start(main_loop,http_readable);
 
-    conn->id =g_connection_id++ ; 
+    conn->id   = g_connection_id++ ; 
     conn->fd   = fd;
 
     int ret = write(fd,conn->writebuf,strlen(conn->writebuf));
@@ -263,9 +263,10 @@ int new_tcp_connection_chain(char * ip, unsigned int port,struct ev_loop *main_l
     }
 
     strncpy(conn->host, ip, MAX_HOST_LEN);
-    conn->port = port;
-    conn->fd   = fd;
-    conn->id =g_connection_id++ ; 
+    conn->port            = port;
+    conn->fd              = fd;
+    conn->request_count   = 0;
+    conn->id              = g_connection_id++ ; 
 
     ev_io_init(http_readable,http_read,fd,EV_READ);
     http_readable->data = conn;
