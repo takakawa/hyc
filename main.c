@@ -10,6 +10,7 @@
 #include<fcntl.h>
 #include <errno.h>
 #include <sys/time.h> 
+#include <time.h>
 
 #define READ_BUF_LEN (4096)
 #define WRITE_BUF_LEN (4096)
@@ -41,6 +42,7 @@ struct connection
     char         readbuf[READ_BUF_LEN ];
     char         host[MAX_HOST_LEN];
     unsigned int port;
+    unsigned int fd;
 };
 
 
@@ -53,6 +55,7 @@ struct Host
 };
 
 struct Host h ;
+unsigned int g_connection_id = 0;
 
 int new_tcp_connection_chain(char * ip, unsigned int port,struct ev_loop *main_loop);
 int continue_tcp_connection(struct connection *conn, struct ev_loop *main_loop);
@@ -183,11 +186,12 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
 
        if(conn->request_count >= h.n )
 	   {
+            PRINT("conn:%d run %d times quit,set :%d\n",conn->id, conn->request_count,h.n);
+
             close(stat->fd);
-            free(conn);
             ev_io_stop(loop, stat);
+            free(conn);
             free(stat);
-            PRINT("run %d times quit\n",conn->request_count);
             return; 
 	   }
 
@@ -218,7 +222,10 @@ int continue_tcp_connection(struct connection *conn, struct ev_loop *main_loop)
     http_readable->data = conn;
     ev_io_start(main_loop,http_readable);
 
-   int ret = write(fd,conn->writebuf,strlen(conn->writebuf));
+    conn->id =g_connection_id++ ; 
+    conn->fd   = fd;
+
+    int ret = write(fd,conn->writebuf,strlen(conn->writebuf));
     conn->request_send_timestamp = getCurrentTime();
     if( errno == EAGAIN)// 实际测试中第一次也会出现反回EAGIN的情况，这时buf是第一次写入数据，why?
     {
@@ -257,6 +264,8 @@ int new_tcp_connection_chain(char * ip, unsigned int port,struct ev_loop *main_l
 
     strncpy(conn->host, ip, MAX_HOST_LEN);
     conn->port = port;
+    conn->fd   = fd;
+    conn->id =g_connection_id++ ; 
 
     ev_io_init(http_readable,http_read,fd,EV_READ);
     http_readable->data = conn;
@@ -271,11 +280,11 @@ int new_tcp_connection_chain(char * ip, unsigned int port,struct ev_loop *main_l
     conn->request_send_timestamp = getCurrentTime();
     if( errno == EAGAIN)// 实际测试中第一次也会出现反回EAGIN的情况，这时buf是第一次写入数据，why?
     {
-        PRINT(" ret %d errno:%d desc:%s\n",ret,errno,strerror(errno));
+        PRINT("fd:%d ret %d errno:%d desc:%s\n",fd, ret,errno,strerror(errno));
     }
     else if(errno != EAGAIN)
     {
-        PRINT(" ret %d errno:%d desc:%s\n",ret,errno,strerror(errno));
+        PRINT("fd:%d ret %d errno:%d desc:%s\n",fd, ret,errno,strerror(errno));
     }
 }
 static void timer_callback(struct ev_loop *loop,ev_timer *w,int revents)
