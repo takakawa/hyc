@@ -8,9 +8,9 @@
 #include<netinet/in.h>
 #include<ev.h>
 #include<fcntl.h>
-#include <errno.h>
-#include <sys/time.h> 
-#include <time.h>
+#include<errno.h>
+#include<sys/time.h> 
+#include<time.h>
 
 #define READ_BUF_LEN (4096)
 #define WRITE_BUF_LEN (4096)
@@ -41,6 +41,8 @@ struct param
    char          *path;
    char          *postdata;
    char          *method;
+   char          *headers[100];
+   unsigned int   header_num;
    unsigned int  port;
    unsigned int  n;
 };
@@ -135,6 +137,12 @@ int   build_http_request(struct connection * conn)
        strcat(buf,ip);
        strcat(buf,"\r\n");
        strcat(buf,"Accept: */*\r\n");
+
+       for(int i=0;i < conn->param->header_num;i++)
+       {
+            strcat(buf,conn->param->headers[i]);  
+            strcat(buf,"\r\n");
+       }
 
        if (strcmp("GET",method) == 0)
        {
@@ -369,8 +377,10 @@ int main(int argc , char ** argv)
     char * method = NULL;
     char * postdata = NULL;
 
+    memset(&param, 0, sizeof(param));
+
     opterr = 0;
-    while( (c= getopt(argc, argv , "c:u:n:h:p:t:X:d:")) != -1 )
+    while( (c= getopt(argc, argv , "c:u:n:h:p:t:X:d:H:")) != -1 )
     {
    	switch(c)
 	    {
@@ -386,6 +396,9 @@ int main(int argc , char ** argv)
 	   	case 'n': 
 			n = atoi(optarg);
 			break;
+	   	case 'H': 
+            param.headers[param.header_num++] = optarg;
+			break;
 	   	case 'X': 
 			method = optarg;
 			break;
@@ -400,7 +413,7 @@ int main(int argc , char ** argv)
 			break;
 	    
 		default:
-            DEBUG_PRINT("not support args:usage hyc -u http://www.test.com/test?useid=1#aa");
+            PRINT("has not support args\n");
 			abort();
 	    }	
     }
@@ -413,6 +426,7 @@ int main(int argc , char ** argv)
     }
 
     signal(SIGINT, stop);
+    
 
     param.ip = host;
     param.port = port;
