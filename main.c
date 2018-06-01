@@ -29,7 +29,7 @@
 extern char *optarg;
 extern int   optopt;
 extern int   opterr;
-struct timer_data
+struct global_data
 {
    struct connection ** conns;
    unsigned int  conns_num;
@@ -66,7 +66,7 @@ struct connection
 
 
 
-struct timer_data timer_data;
+struct global_data global_data;
 struct   param param;
 unsigned int  g_connection_id = 0;
 
@@ -300,68 +300,46 @@ struct connection * new_connection_chain(struct param * param,struct ev_loop *ma
     flush_connection(conn);
     return conn;
 }
+void summary(struct global_data *gdata)
+{
+    int request_cnt          = 0;
+    int request_total_time   = 0;
+    int request_qps          = 0;
+    struct global_data * data = gdata;
+ 
+    for(int i=0; i< data->conns_num; i++)
+    {
+        int request_cnt_tmp        = data->conns[i]->request_count; 
+        int request_total_time_tmp = data->conns[i]->request_total_time; 
+        int request_qps_tmp        = (int)((float)(request_cnt_tmp)/((float)(request_total_time_tmp)/1000));
+
+        printf("\t\tConnection %3d Result\n",data->conns[i]->id);
+        printf("Total SendRequest: %d\n",request_cnt_tmp);
+        printf("Total Time(ms)   : %d\n",request_total_time_tmp);
+        printf("Total QPS        : %d\n",request_qps_tmp);
+        printf("Request Latency  : %f ms\n",(float)request_total_time_tmp/request_cnt_tmp);
+        request_qps                += request_qps_tmp;
+        request_cnt                += data->conns[i]->request_count; 
+        request_total_time         += data->conns[i]->request_total_time; 
+    }
+    
+    printf("\nTotal Result:\n");
+    printf("Total SendRequest: %d\n",request_cnt);
+    printf("Total Time(ms)   : %d\n",request_total_time);
+    printf("Total QPS        : %d\n",request_qps);
+    printf("Request Latency  : %f ms\n",(float)request_total_time/request_cnt);
+ 
+}
 static void timer_callback(struct ev_loop *loop,ev_timer *w,int revents)
 {
-
-    int request_cnt          = 0;
-    int request_total_time   = 0;
-    int request_qps          = 0;
-    struct timer_data * data = w->data;
- 
-    for(int i=0; i< data->conns_num; i++)
-    {
-        int request_cnt_tmp        = data->conns[i]->request_count; 
-        int request_total_time_tmp = data->conns[i]->request_total_time; 
-        int request_qps_tmp        = (int)((float)(request_cnt_tmp)/((float)(request_total_time_tmp)/1000));
-
-        printf("Connection %3d Result:\n",data->conns[i]->id);
-        printf("Total SendRequest: %d\n",request_cnt_tmp);
-        printf("Total Time(ms)   : %d\n",request_total_time_tmp);
-        printf("Total QPS        : %d\n",request_qps_tmp);
-        printf("Request Latency  : %f ms\n",(float)request_total_time_tmp/request_cnt_tmp);
-        request_qps                += request_qps_tmp;
-        request_cnt                += data->conns[i]->request_count; 
-        request_total_time         += data->conns[i]->request_total_time; 
-    }
-    
-    printf("\nTotal Result:\n");
-    printf("Total SendRequest: %d\n",request_cnt);
-    printf("Total Time(ms)   : %d\n",request_total_time);
-    printf("Total QPS        : %d\n",request_qps);
-    printf("Request Latency  : %f ms\n",(float)request_total_time/request_cnt);
+    summary((struct global_data*)w->data); 
     exit(0);
 }
+
 void stop(int sig)
 {   
-    int request_cnt          = 0;
-    int request_total_time   = 0;
-    int request_qps          = 0;
-    struct timer_data * data = &timer_data;
- 
-    for(int i=0; i< data->conns_num; i++)
-    {
-        int request_cnt_tmp        = data->conns[i]->request_count; 
-        int request_total_time_tmp = data->conns[i]->request_total_time; 
-        int request_qps_tmp        = (int)((float)(request_cnt_tmp)/((float)(request_total_time_tmp)/1000));
-
-        printf("Connection %3d Result:\n",data->conns[i]->id);
-        printf("Total SendRequest: %d\n",request_cnt_tmp);
-        printf("Total Time(ms)   : %d\n",request_total_time_tmp);
-        printf("Total QPS        : %d\n",request_qps_tmp);
-        printf("Request Latency  : %f ms\n",(float)request_total_time_tmp/request_cnt_tmp);
-        request_qps                += request_qps_tmp;
-        request_cnt                += data->conns[i]->request_count; 
-        request_total_time         += data->conns[i]->request_total_time; 
-    }
-    
-    printf("\nTotal Result:\n");
-    printf("Total SendRequest: %d\n",request_cnt);
-    printf("Total Time(ms)   : %d\n",request_total_time);
-    printf("Total QPS        : %d\n",request_qps);
-    printf("Request Latency  : %f ms\n",(float)request_total_time/request_cnt);
-    exit(0);
-
-
+   summary(&global_data);
+   exit(0);
 }
 int main(int argc , char ** argv)
 {
@@ -369,7 +347,7 @@ int main(int argc , char ** argv)
     int i = 0;
     int c ;
     int n = -1;
-    unsigned int  t = 10;
+    unsigned int  t = 0;
     unsigned int  concurrent  = 0;
     unsigned int  port  = 0;
     char * url  = NULL;
@@ -439,23 +417,25 @@ int main(int argc , char ** argv)
 
     struct ev_loop *main_loop = ev_default_loop(0);
     
-
-    timer_data.conns = malloc(sizeof(struct connection *)*concurrent);
-    timer_data.conns_num = concurrent;
+    global_data.conns = malloc(sizeof(struct connection *)*concurrent);
+    global_data.conns_num = concurrent;
 
     for(i = 0; i< concurrent; i++)
     {
-	   timer_data.conns[i] = new_connection_chain(&param ,main_loop);
+	   global_data.conns[i] = new_connection_chain(&param ,main_loop);
     }
 
     if ( t > 0 )
     {
+        printf("add timer:%ds\n",t);
         ev_timer timer_watcher;
         ev_init(&timer_watcher,timer_callback);
-        timer_watcher.data = &timer_data;
+        timer_watcher.data = &global_data;
         ev_timer_set(&timer_watcher,t,0);// t秒后开始执行,非周期 
         ev_timer_start(main_loop,&timer_watcher);
     }
     ev_run(main_loop, 0);
-    free(timer_data.conns);
+    summary(&global_data);// all events is topped ,will comes here
+
+    free(global_data.conns);
 }
