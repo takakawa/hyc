@@ -1,8 +1,5 @@
-#include<stdio.h>
-#include<stdlib.h>
 #include<string.h>
 #include<getopt.h>
-#include<unistd.h>
 #include<sys/socket.h>
 #include<arpa/inet.h>
 #include<netinet/in.h>
@@ -11,6 +8,10 @@
 #include<errno.h>
 #include<sys/time.h> 
 #include<time.h>
+
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #define READ_BUF_LEN (4096)
 #define WRITE_BUF_LEN (4096)
@@ -109,14 +110,16 @@ static int new_connection(const char *ip, unsigned int port)
     ret = connect(fd, (struct sockaddr*)(&addr), sizeof(addr));
     if(ret < 0)
     {
-       DEBUG_PRINT("Connect Error:%d  errno:%d %s\n",ret,errno,strerror(errno)); 
+       PRINT("Connect Error:%d  errno:%d %s\n",ret,errno,strerror(errno)); 
        return -2;
     }
     ret = setnonblock(fd);
     if (ret < 0)
     {
+       PRINT("setnonblock:%d  errno:%d %s\n",ret,errno,strerror(errno)); 
        return ret; 
     }
+    DEBUG_PRINT("fd:%d\n",fd);
     return fd;
 }
 
@@ -172,38 +175,79 @@ int   build_http_request(struct connection * conn)
 }
 int flush_connection(struct connection * conn)
 {   
-    int writelen = write(conn->fd,conn->writebuf,strlen(conn->writebuf));
-    DEBUG_PRINT("send:\n%s\n",conn->writebuf);
-    conn->request_send_timestamp = getCurrentTime();
 
-    if (errno)
+    while(1)
     {
-        PRINT("fd:%d writelen:%d errno:%d desc:%s\n",conn->fd, writelen,errno,strerror(errno));
-        exit(-1);
+    
+        int writelen = write(conn->fd,conn->writebuf,strlen(conn->writebuf));
+        DEBUG_PRINT("send:\n%s\n",conn->writebuf);
+        conn->request_send_timestamp = getCurrentTime();
+
+        if (errno == EAGAIN)
+        {
+            usleep(100);
+            continue;
+        }
+        else if(errno == 0)
+        {
+             break; 
+        }
+        else
+        {
+             PRINT("fd:%d writelen:%d errno:%d desc:%s\n",conn->fd, writelen,errno,strerror(errno));
+             exit(-1); 
+        }
     }
     return 0;
 } 
 int receive_connection(struct connection *conn)
 {
+        DEBUG_PRINT("recv data from fd[%d]\n",conn->fd);
         conn->request_count ++; 
+      
+       int total_recv_len = 0;
+       while(1)
+       {
        
+           int n = read(conn->fd,conn->readbuf, READ_BUF_LEN);
+           if (n < 0)
+           {
+                if ( errno == EAGAIN)
+               {
+                   break;
+                   DEBUG_PRINT("recv EAGIN ,ret:%d\n",n);
+               }
+               else
+               {
+                  PRINT("recv err:%d %s %s:%d\n",errno,strerror(errno),conn->param->ip,conn->param->port) ;
+                  exit(-2); 
+               }
+
+           }
+           else if( n == 0)
+           {
+              return 0; 
+           }
+           DEBUG_PRINT("recv data %d bytes\n",n);
+           total_recv_len += n; 
+       } 
 	   DEBUG_PRINT("conn[%d] http request cnt: %d\n",conn->id, conn->request_count);
-	   DEBUG_PRINT("recv:\n"\
+	   PRINT("recv:\n"\
 	               "------------------------------------------"\
                    "----------------\n%s\n--------------------"\
                    "--------------------------------------\n",conn->readbuf);
        
-        conn->request_total_time += (getCurrentTime()- conn->request_send_timestamp );
+       conn->request_total_time += (getCurrentTime()- conn->request_send_timestamp );
+       return total_recv_len;
 
 }
 void http_read(struct ev_loop *loop, ev_io *stat, int events)
 {
    struct connection *conn =  stat->data;
 
-   int n = read(stat->fd,conn->readbuf, READ_BUF_LEN);
+   int n =   receive_connection(conn);
    if (n >0)
    {
-       receive_connection(conn);
        if(conn->param->n > 0 && conn->request_count >= conn->param->n )
 	   {
             PRINT("conn:%d run %d times quit,set :%d\n",conn->id, conn->request_count,conn->param->n);
