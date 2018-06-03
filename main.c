@@ -175,13 +175,17 @@ int   build_http_request(struct connection * conn)
 }
 int flush_connection(struct connection * conn)
 {   
-
-    while(1)
+    int send_index  = 0;
+    int total_send_len = strlen(conn->writebuf);
+    while(send_index < total_send_len)
     {
     
-        int writelen = write(conn->fd,conn->writebuf,strlen(conn->writebuf));
-        DEBUG_PRINT("send:\n%s\n",conn->writebuf);
+        int writelen = write(conn->fd,conn->writebuf+send_index ,total_send_len - send_index);
+
+        DEBUG_PRINT("send:from %d len %d\n%s\n",send_index,total_send_len-writelen,conn->writebuf);
         conn->request_send_timestamp = getCurrentTime();
+       
+        send_index += writelen;
 
         if (errno == EAGAIN)
         {
@@ -190,7 +194,7 @@ int flush_connection(struct connection * conn)
         }
         else if(errno == 0)
         {
-             break; 
+            break; 
         }
         else
         {
@@ -210,12 +214,18 @@ int receive_connection(struct connection *conn)
        {
        
            int n = read(conn->fd,conn->readbuf, READ_BUF_LEN);
+       
+           DEBUG_PRINT("recv:%d\n"\
+	               "------------------------------------------"\
+                   "----------------\n%s\n--------------------"\
+                   "--------------------------------------\n",n,conn->readbuf);
+
            if (n < 0)
            {
                 if ( errno == EAGAIN)
                {
-                   break;
                    DEBUG_PRINT("recv EAGIN ,ret:%d\n",n);
+                   break;
                }
                else
                {
@@ -232,12 +242,7 @@ int receive_connection(struct connection *conn)
            total_recv_len += n; 
        } 
 	   DEBUG_PRINT("conn[%d] http request cnt: %d\n",conn->id, conn->request_count);
-	   PRINT("recv:\n"\
-	               "------------------------------------------"\
-                   "----------------\n%s\n--------------------"\
-                   "--------------------------------------\n",conn->readbuf);
-       
-       conn->request_total_time += (getCurrentTime()- conn->request_send_timestamp );
+	   conn->request_total_time += (getCurrentTime()- conn->request_send_timestamp );
        return total_recv_len;
 
 }
@@ -246,6 +251,7 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
    struct connection *conn =  stat->data;
 
    int n =   receive_connection(conn);
+
    if (n >0)
    {
        if(conn->param->n > 0 && conn->request_count >= conn->param->n )
@@ -302,11 +308,10 @@ int continue_connection(struct connection *conn, struct ev_loop *main_loop)
 
 struct connection * new_connection_chain(struct param * param,struct ev_loop *main_loop)
 {
-    char * ip     = param->ip;
+    char *   ip   = param->ip;
     unsigned port = param->port;
 
-    int  fd = new_connection(ip,port);
-
+    int      fd   = new_connection(ip,port);
     if (fd < 0 )
     {
        PRINT("fd is %d\n",fd) ;
