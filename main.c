@@ -47,6 +47,8 @@ struct param
    unsigned int  port;
    unsigned int  n;
    unsigned int  rate;
+   unsigned int  intervalus;
+   unsigned int  concurrent;
 };
 
 struct connection 
@@ -203,6 +205,8 @@ int flush_connection(struct connection * conn)
              exit(-1); 
         }
     }
+
+    usleep(conn->param->intervalus);
     return 0;
 } 
 int receive_connection(struct connection *conn)
@@ -465,8 +469,10 @@ int main(int argc , char ** argv)
     param.path = url;
     param.n = n;
     param.rate = rate;
+    param.concurrent=concurrent;
     param.postdata= postdata;
     param.method = method?method:"GET";
+    param.intervalus = 1000000/(rate*concurrent);
 
     DEBUG_PRINT("%s:%d concurrent:%d\n",param.ip,param.port,concurrent);
 
