@@ -180,13 +180,16 @@ int flush_connection(struct connection * conn)
 {   
     int send_index  = 0;
     int total_send_len = strlen(conn->writebuf);
+    
+    usleep(conn->param->intervalus);
+
+    conn->request_send_timestamp = getCurrentTime();
     while(send_index < total_send_len)
     {
     
         int writelen = write(conn->fd,conn->writebuf+send_index ,total_send_len - send_index);
 
         DEBUG_PRINT("send:from %d len %d\n%s\n",send_index,total_send_len-writelen,conn->writebuf);
-        conn->request_send_timestamp = getCurrentTime();
        
         send_index += writelen;
 
@@ -206,7 +209,6 @@ int flush_connection(struct connection * conn)
         }
     }
 
-    usleep(conn->param->intervalus);
     return 0;
 } 
 int receive_connection(struct connection *conn)
@@ -402,18 +404,19 @@ int main(int argc , char ** argv)
     int c ;
     int n = -1;
     unsigned int  t = 0;
-    unsigned int  concurrent  = 0;
+    unsigned int  concurrent  = 1;
     unsigned int  port  = 0;
     unsigned int  rate  = 0;
     char * url  = NULL;
     char * host = NULL;
     char * method = NULL;
     char * postdata = NULL;
+    char * args_pattern = "c:u:n:h:p:t:X:d:H:r:";
 
     memset(&param, 0, sizeof(param));
 
     opterr = 0;
-    while( (c= getopt(argc, argv , "c:u:n:h:p:t:X:d:H:r:")) != -1 )
+    while( (c= getopt(argc, argv , args_pattern)) != -1 )
     {
    	switch(c)
 	    {
@@ -457,7 +460,7 @@ int main(int argc , char ** argv)
 
     if ( concurrent == 0 || url == NULL)
     {
-       DEBUG_PRINT("args wrong");
+       DEBUG_PRINT("args:%s\n",args_pattern);
        exit(-1); 
     }
 
@@ -472,9 +475,12 @@ int main(int argc , char ** argv)
     param.concurrent=concurrent;
     param.postdata= postdata;
     param.method = method?method:"GET";
-    param.intervalus = 1000000/(rate*concurrent);
+    if (rate*concurrent)
+    {
+       param.intervalus = 1000000/(rate*concurrent);
+    }
 
-    DEBUG_PRINT("%s:%d concurrent:%d\n",param.ip,param.port,concurrent);
+    printf("HYC runs with %d concurrency, sleep intervalus:%d\n",concurrent,param.intervalus);
 
     struct ev_loop *main_loop = ev_default_loop(0);
     
