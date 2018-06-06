@@ -46,6 +46,7 @@ struct param
    unsigned int   header_num;
    unsigned int  port;
    unsigned int  n;
+   unsigned int  rate;
 };
 
 struct connection 
@@ -399,6 +400,7 @@ int main(int argc , char ** argv)
     unsigned int  t = 0;
     unsigned int  concurrent  = 0;
     unsigned int  port  = 0;
+    unsigned int  rate  = 0;
     char * url  = NULL;
     char * host = NULL;
     char * method = NULL;
@@ -407,7 +409,7 @@ int main(int argc , char ** argv)
     memset(&param, 0, sizeof(param));
 
     opterr = 0;
-    while( (c= getopt(argc, argv , "c:u:n:h:p:t:X:d:H:")) != -1 )
+    while( (c= getopt(argc, argv , "c:u:n:h:p:t:X:d:H:r:")) != -1 )
     {
    	switch(c)
 	    {
@@ -428,6 +430,9 @@ int main(int argc , char ** argv)
 			break;
 	   	case 'X': 
 			method = optarg;
+			break;
+	   	case 'r': 
+			rate = atoi(optarg);
 			break;
 	   	case 'd': 
 			postdata = optarg;
@@ -459,6 +464,7 @@ int main(int argc , char ** argv)
     param.port = port;
     param.path = url;
     param.n = n;
+    param.rate = rate;
     param.postdata= postdata;
     param.method = method?method:"GET";
 
