@@ -457,15 +457,15 @@ int main(int argc , char ** argv)
 			break;
 	    
 		default:
-            PRINT("has not support args\n");
-			abort();
+                        printf("Usage:%s\n",args_pattern);
+			exit(0);
 	    }	
     }
 
 
     if ( concurrent == 0 || url == NULL)
     {
-       DEBUG_PRINT("args:%s\n",args_pattern);
+       printf("args:%s\n",args_pattern);
        exit(-1); 
     }
 
