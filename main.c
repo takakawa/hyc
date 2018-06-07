@@ -49,6 +49,7 @@ struct param
    unsigned int  rate;
    unsigned int  intervalus;
    unsigned int  concurrent;
+   int           pressure_start_timestamp; // 本connection开始的时间
 };
 
 struct connection 
@@ -57,7 +58,7 @@ struct connection
     int          request_count;
     int          request_start_timestamp; // 本connection开始的时间
     int          request_send_timestamp; // 每次发送更新这个时间戳
-    int          request_total_time; // connection 处理请求的总时间
+    int          request_total_time; // connection 处理请求的总时间,不含由于设置rate而引入的sleep时间
     char         url[MAX_URL_LEN];
     char         writebuf[WRITE_BUF_LEN ];
     char         readbuf[READ_BUF_LEN ];
@@ -181,7 +182,6 @@ int flush_connection(struct connection * conn)
     int send_index  = 0;
     int total_send_len = strlen(conn->writebuf);
     
-    usleep(conn->param->intervalus);
 
     conn->request_send_timestamp = getCurrentTime();
     while(send_index < total_send_len)
@@ -259,8 +259,11 @@ void http_read(struct ev_loop *loop, ev_io *stat, int events)
 
    int n =   receive_connection(conn);
 
+
    if (n >0)
    {
+       usleep(conn->param->intervalus);
+
        if(conn->param->n > 0 && conn->request_count >= conn->param->n )
 	   {
             PRINT("conn:%d run %d times quit,set :%d\n",conn->id, conn->request_count,conn->param->n);
@@ -359,30 +362,32 @@ struct connection * new_connection_chain(struct param * param,struct ev_loop *ma
 void summary(struct global_data *gdata)
 {
     int request_cnt          = 0;
-    int request_total_time   = 0;
-    int request_qps          = 0;
+    int request_total_time   = 0;//请求纯耗时，不含等待时间
+    float request_qps        = 0;
     struct global_data * data = gdata;
  
+    int http_pressure_time   = getCurrentTime() - data->conns[0]->param->pressure_start_timestamp ;//压测时间
     for(int i=0; i< data->conns_num; i++)
     {
         int request_cnt_tmp        = data->conns[i]->request_count; 
         int request_total_time_tmp = data->conns[i]->request_total_time; 
-        int request_qps_tmp        = (int)((float)(request_cnt_tmp)/((float)(request_total_time_tmp)/1000));
+        float request_qps_tmp      = ((float)(request_cnt_tmp)/((float)(http_pressure_time)/1000.0f));
 
-        printf("\t\tConnection %3d Result\n",data->conns[i]->id);
+        printf("\t\tConnection %3d Summary\n",data->conns[i]->id);
         printf("Total SendRequest: %d\n",request_cnt_tmp);
-        printf("Total Time(ms)   : %d\n",request_total_time_tmp);
-        printf("Total QPS        : %d\n",request_qps_tmp);
-        printf("Request Latency  : %f ms\n",(float)request_total_time_tmp/request_cnt_tmp);
+        printf("Total Time       : %d ms\n",request_total_time_tmp);
+        printf("Total QPS        : %f\n",request_qps_tmp);
+        printf("Request Latency  : %f ms\n",(float)request_total_time/request_cnt_tmp);
         request_qps                += request_qps_tmp;
         request_cnt                += data->conns[i]->request_count; 
         request_total_time         += data->conns[i]->request_total_time; 
     }
     
-    printf("\nTotal Result:\n");
+    printf("\nSummary:\n");
+    printf("Total PressTime  : %d ms\n",http_pressure_time);
     printf("Total SendRequest: %d\n",request_cnt);
-    printf("Total Time(ms)   : %d\n",request_total_time);
-    printf("Total QPS        : %d\n",request_qps);
+    printf("Total Time       : %d ms\n",request_total_time);
+    printf("Total QPS        : %f\n",request_qps);
     printf("Request Latency  : %f ms\n",(float)request_total_time/request_cnt);
  
 }
@@ -433,7 +438,7 @@ int main(int argc , char ** argv)
 			n = atoi(optarg);
 			break;
 	   	case 'H': 
-            param.headers[param.header_num++] = optarg;
+                        param.headers[param.header_num++] = optarg;
 			break;
 	   	case 'X': 
 			method = optarg;
@@ -475,9 +480,11 @@ int main(int argc , char ** argv)
     param.concurrent=concurrent;
     param.postdata= postdata;
     param.method = method?method:"GET";
+    param.pressure_start_timestamp = getCurrentTime();
+
     if (rate*concurrent)
     {
-       param.intervalus = 1000000/(rate*concurrent);
+       param.intervalus = 1000000/rate;
     }
 
     printf("HYC runs with %d concurrency, sleep intervalus:%d\n",concurrent,param.intervalus);
