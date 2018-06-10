@@ -402,6 +402,13 @@ void stop(int sig)
    summary(&global_data);
    exit(0);
 }
+void read_thread()
+{
+
+    struct ev_loop *main_loop = ev_default_loop(0);
+    
+
+}
 int main(int argc , char ** argv)
 {
 
