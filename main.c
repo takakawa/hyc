@@ -27,6 +27,10 @@
 #define DEBUG_PRINT(format,args...)   1
 #endif
 
+#define bool int
+#define true 1
+#define false 0
+
 extern char *optarg;
 extern int   optopt;
 extern int   opterr;
@@ -129,6 +133,9 @@ static int new_connection(const char *ip, unsigned int port)
 
 int   build_http_request(struct connection * conn)
 {
+       bool add_host   = false;
+       bool add_agent  = false;
+       bool add_accept = false;
        char * method = conn->param->method;
        char * path   = conn->param->path;
        char * body   = conn->param->postdata;
@@ -139,16 +146,38 @@ int   build_http_request(struct connection * conn)
        strcat(buf," ");
        strcat(buf,path);
        strcat(buf," HTTP/1.1\r\n");
-       strcat(buf,"User-Agent: hyc\r\n");
-       strcat(buf,"Host: ");
-       strcat(buf,ip);
-       strcat(buf,"\r\n");
-       strcat(buf,"Accept: */*\r\n");
 
        for(int i=0;i < conn->param->header_num;i++)
        {
             strcat(buf,conn->param->headers[i]);  
             strcat(buf,"\r\n");
+	    if (strstr(conn->param->headers[i],"Host: "))
+	    {
+		    add_host = true;
+	    }
+	    if (strstr(conn->param->headers[i],"User-Agent: "))
+	    {
+		    add_agent = true;
+	    }
+	    if (strstr(conn->param->headers[i],"Accept: "))
+	    {
+		    add_accept = true;
+	    }
+       }
+       if(!add_host)
+       {
+	       strcat(buf,"Host: ");
+	       strcat(buf,ip);
+	       strcat(buf,"\r\n");
+       }
+       if(!add_accept)
+       {
+	       strcat(buf,"Accept: */*\r\n");
+       }
+
+       if(!add_agent)
+       {
+	       strcat(buf,"User-Agent: hyc\r\n");
        }
 
        if (strcmp("GET",method) == 0)
@@ -401,13 +430,6 @@ void stop(int sig)
 {   
    summary(&global_data);
    exit(0);
-}
-void read_thread()
-{
-
-    struct ev_loop *main_loop = ev_default_loop(0);
-    
-
 }
 int main(int argc , char ** argv)
 {
