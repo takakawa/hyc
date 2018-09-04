@@ -3,7 +3,7 @@
 #include<sys/socket.h>
 #include<arpa/inet.h>
 #include<netinet/in.h>
-#include<ev.h>
+#include<libev/ev.h>
 #include<fcntl.h>
 #include<errno.h>
 #include<sys/time.h> 
@@ -75,7 +75,7 @@ struct connection
 
 
 
-struct global_data global_data;
+struct   global_data global_data;
 struct   param param;
 unsigned int  g_connection_id = 0;
 
@@ -326,7 +326,7 @@ int continue_connection(struct connection *conn, struct ev_loop *main_loop)
        return -1;
     }
 
-    struct ev_io * http_readable = malloc(sizeof(struct ev_io));
+    struct ev_io * http_readable = (struct ev_io*)malloc(sizeof(struct ev_io));
 
     if (!http_readable)
     {
@@ -354,7 +354,7 @@ struct connection * new_connection_chain(struct param * param,struct ev_loop *ma
     if (fd < 0 )
     {
        PRINT("fd is %d\n",fd) ;
-       exit(-1);
+       return NULL;
     }
 
     struct ev_io * http_readable = malloc(sizeof(struct ev_io));
@@ -362,14 +362,14 @@ struct connection * new_connection_chain(struct param * param,struct ev_loop *ma
     if (!http_readable)
     {
        PRINT("ev_io malloc err %d\n",http_readable) ;
-       exit(-1);
+       return NULL;
     }
     struct connection * conn = malloc(sizeof(struct connection));
     if(!conn)
     {
     
        PRINT("conn malloc err \n") ;
-       exit(-1);
+       return NULL;
     }
 
     strncpy(conn->host, ip, MAX_HOST_LEN);
@@ -402,7 +402,7 @@ void summary(struct global_data *gdata)
         int request_total_time_tmp = data->conns[i]->request_total_time; 
         float request_qps_tmp      = ((float)(request_cnt_tmp)/((float)(http_pressure_time)/1000.0f));
 
-        printf("\t\tConnection %3d Summary\n",data->conns[i]->id);
+        printf("\t\tConnection %3d\n",data->conns[i]->id);
         printf("Total SendRequest: %d\n",request_cnt_tmp);
         printf("Total Time       : %d ms\n",request_total_time_tmp);
         printf("Total QPS        : %f\n",request_qps_tmp);
@@ -455,38 +455,38 @@ int main(int argc , char ** argv)
    	switch(c)
 	    {
 	   	case 'c': 
-			concurrent = atoi(optarg);
+			concurrent = atoi(optarg); // concurrency
 			break;
 	   	case 'p': 
-			port = atoi(optarg);
+			port = atoi(optarg);      // port
 			break;
 	   	case 'h': 
-			host = optarg;
+			host = optarg;           // host
 			break;
 	   	case 'n': 
-			n = atoi(optarg);
+    	    n = atoi(optarg);       // request number to send
 			break;
 	   	case 'H': 
-                        param.headers[param.header_num++] = optarg;
+            param.headers[param.header_num++] = optarg;  // header
 			break;
 	   	case 'X': 
-			method = optarg;
+			method = optarg;                            // method
 			break;
 	   	case 'r': 
-			rate = atoi(optarg);
+			rate = atoi(optarg);                    // send rate
 			break;
 	   	case 'd': 
-			postdata = optarg;
+			postdata = optarg;                 // post data
 			break;
 	   	case 't': 
-			t = atoi(optarg);
+			t = atoi(optarg);                  // time
 			break;
 	   	case 'u': 
-			url = optarg;
+			url = optarg;                 // url
 			break;
 	    
 		default:
-                        printf("Usage:%s\n",args_pattern);
+            printf("Usage:%s\n",args_pattern);
 			exit(0);
 	    }	
     }
@@ -525,7 +525,14 @@ int main(int argc , char ** argv)
 
     for(i = 0; i< concurrent; i++)
     {
-	   global_data.conns[i] = new_connection_chain(&param ,main_loop);
+        struct connection * conn=  new_connection_chain(&param ,main_loop);        
+        
+        if (NULL == conn)
+        {
+            printf("new_connection_chain error: %d\n",i);
+            return -1;
+        }
+	    global_data.conns[i] = conn;
     }
 
     if ( t > 0 )
